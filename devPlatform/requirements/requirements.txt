@@ -1,0 +1,6 @@
+
+# Django
+
+# .env parsing
+django-environ
+-r ./requirements.3.12.txt

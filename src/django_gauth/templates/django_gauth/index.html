@@ -1,0 +1,189 @@
+<!-- 
+Gauth Application 
+=================
+Author : Ankit Kumar ( ankit.kumar05@telusdigital.com ) 
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}GAuth</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        /* navbar css */
+        .navbar {
+            margin: 0;
+            background-color: #4b286d !important;
+            color: white;
+            padding: 1em;
+            text-align: center;
+            display: flex;
+            align-items: anchor-center;
+        }
+        /* --- */
+
+        /* hover feature css */
+        .hoverArea {
+            padding: 10px;
+            border: 1px solid rebeccapurple;
+            cursor: pointer;
+        }
+
+        .hoverInfoBox {
+            position: absolute; /* Or relative to its parent container */
+            border: 1px solid red;
+            margin-top: 5px; /* Adjust as needed for spacing */
+            background: white;
+            /* width: 100%; */
+            display: flex;
+            width: fit-content;
+            flex-direction: column;
+            border: 1%;
+            border-radius: 1em;
+            padding: 0.5em;
+        }
+        /* --- */
+    </style>
+</head>
+<body>
+    
+    <div class="navbar">
+        <div style="flex: 1;">
+            <span style="font-family: monospace;
+            font-weight: bold;
+            font-size: large;
+            letter-spacing: 3px;
+            ">TELUS</span>
+            <span>Digital</span>
+        </div>
+        <div style="flex: 6;">
+            <h1>Google Auth</h1>
+        </div>
+
+        <div style="flex: 1;" style="cursor: pointer;">
+            <img id="userPicture" src="{{ context_data.user_info.picture }}" alt="..." 
+                style="
+                    border: 1.5px solid white;
+                    border-radius: 50%;
+                "
+            >
+            <div id="userInfo" class="hoverInfoBox">
+                <b style="color: rebeccapurple;">{{ context_data.user_info.name }}</b>
+                <b style="color: rebeccapurple;">{{ context_data.user_info.email }}</b>
+                {% if context_data.user_info.email_verified %}
+                    <i class="material-icons" style="color: green;">check_circle</i>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div style="padding: 0.5em;
+            box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.3);
+            margin: 0.1em;
+            display: flex;
+            justify-content: space-between;
+        ">
+        <div>
+            <span style="
+            color: #4b286d !important;
+            font-weight: bold;
+            "
+            >Session Expiring In :</span>
+            <span id="timer-display" style="text-shadow: 1px 1px lightgrey;"></span>
+        </div>
+        <div style="width: 13.5%;">
+        <button id="AuthenticateButton" style="
+        width: 100%;
+        height: 100%;
+        display: none;
+        ">
+            <a href="{{context_data.login_href}}" style="
+                color: #4b286d !important;
+                font-family: monospace;
+                font-weight: bold;
+            ">
+            Authenticate
+            </a>
+        </button>
+        </div>
+    </div>
+    
+    <script>
+        /*
+            Utilities
+            =========
+        */
+        function registerHover(hoverTargetElementId, hoverInfoElementId) {
+            // Get references to the HTML elements
+            const hoverArea = document.getElementById(hoverTargetElementId);
+            const infoBox = document.getElementById(hoverInfoElementId);
+
+            // Add event listener for mouseover (when mouse enters the area)
+            hoverArea.addEventListener('mouseover', () => {
+                infoBox.style.display = 'block'; // Or 'visibility = "visible"'
+            });
+
+            // Add event listener for mouseout (when mouse leaves the area)
+            hoverArea.addEventListener('mouseout', () => {
+                infoBox.style.display = 'none'; // Or 'visibility = "hidden"'
+            });
+            
+            // initially set to None
+            infoBox.style.display = 'none'
+        }
+        
+    </script>
+    <script>
+
+        registerHover("userPicture", "userInfo")
+        
+        let isAuthenticated = "{{context_data.is_authenticated }}"
+        if (isAuthenticated === "True") {
+            document.getElementById("AuthenticateButton").style.display = "inline-block"
+        }
+        /* --- */
+
+        // Set your target epoch timestamp in seconds (e.g., September 10, 2025, 10:00:00 AM UTC)
+        const targetEpochSeconds = Number("{{ context_data.user_info.exp }}"); // Example: Replace with your actual target
+        const timerDisplay = document.getElementById('timer-display');
+
+        function updateTimer() {
+            const currentEpochSeconds = Math.floor(Date.now() / 1000);
+            let remainingSeconds = targetEpochSeconds - currentEpochSeconds;
+
+            if (remainingSeconds <= 0) {
+                timerDisplay.innerHTML = "Expired !";
+                document.getElementById("AuthenticateButton").style.display = "inline-block"
+                clearInterval(timerInterval);
+                return;
+            }
+
+            const days = Math.floor(remainingSeconds / (60 * 60 * 24));
+            remainingSeconds %= (60 * 60 * 24);
+            const hours = Math.floor(remainingSeconds / (60 * 60));
+            remainingSeconds %= (60 * 60);
+            const minutes = Math.floor(remainingSeconds / 60);
+            const seconds = remainingSeconds % 60;
+
+            timerDisplay.innerHTML = `${days}d ${hours}h ${minutes}m ${seconds}s`;
+        }
+
+        // Initial call to display the timer immediately
+        updateTimer();
+
+        // Update the timer every second
+        const timerInterval = setInterval(updateTimer, 1000);
+
+        /* --- */
+
+
+    </script>
+    
+</body>
+</html>
