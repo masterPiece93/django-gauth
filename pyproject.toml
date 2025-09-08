@@ -3,7 +3,7 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "telus_django_gauth"
+name = "django_gauth"
 version = "0.1.0"
 authors = [
     {name = "Ankit Kumar", email = "ankit.kumar05@telusdigital.com"},
