@@ -4,7 +4,7 @@
 
 > [Developer README](./dev.README.md)
 
-## Important Points
+### Important Points
 
 for production applications , that are working on http**s** , must ensure the following settings for django to be http**s** aware :
 ```sh
