@@ -2,6 +2,8 @@
 
 ![Static Badge](https://img.shields.io/badge/latest-0.1.0-blue)
 
+* [Official Documentation](https://masterpiece93.github.io/django-gauth/)
+
 ## Developer Zone
 
 > [Developer README](./dev.README.md)
