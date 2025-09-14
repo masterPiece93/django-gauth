@@ -41,8 +41,8 @@ dependencies = [
 
 [project.urls]
 #Homepage = "/"
-#Documentation = "docs/"
-Repository = "https://github.com/xavient/django-gauth"
+Documentation = "https://masterpiece93.github.io/django-gauth/"
+Repository = "https://github.com/masterPiece93/django-gauth"
 Changelog = "CHANGELOG.md"
 
 [project.optional-dependencies]
