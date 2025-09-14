@@ -161,3 +161,56 @@ pip install /path/to/your/dist/file.whl
 mypy src/
 ```
 
+## DevPlatform
+
+
+```sh
+pdm@djangoGauth build
+```
+
+Personally Managing a venv :
+
+- ```sh
+    # enter devPlatform
+    cd devPlatform/
+    ```
+
+- ```sh
+    # Create a virtual environment 
+    python3 -m venv venv
+    ```
+
+- ```sh
+    # Activate Virtual Environment
+    source venv/bin/activate
+    ```
+
+- ```sh
+    # Install Requirements
+    pip install -r requirements/requirements.txt
+    ```
+
+- ```sh
+    # install `django_gauth` package
+    pip install -e ../.
+    ```
+    - post this , whatever changes you will make in the local package , they'll be automatically reflected in here .
+
+- ```sh
+    # start server on localhost:8000
+    python3 manage.py runserver localhost:8000
+    ```
+
+Using Make :
+
+- ```sh
+    cd devPlatform/
+    ```
+
+- ```sh
+    make runserver
+    ```
+
+## Documentation
+
+...

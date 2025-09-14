@@ -3,3 +3,6 @@
 google-api-python-client==2.154.0
 # google auth
 google-auth-oauthlib==1.2.1
+
+# django_gauth : installing local build
+-e ../. 
