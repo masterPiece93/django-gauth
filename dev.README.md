@@ -213,4 +213,8 @@ Using Make :
 
 ## Documentation
 
-...
+running mkdocs :
+
+```sh
+mkdocs serve
+```
