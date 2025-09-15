@@ -1,6 +1,7 @@
 # Google Auth <sup>[ Django ]<sup>
 
-![Static Badge](https://img.shields.io/badge/latest-0.1.0-blue)
+![Static Badge](https://img.shields.io/badge/latest-0.1.0-blue)  [![pages-build-deployment](https://github.com/masterPiece93/django-gauth/actions/workflows/pages/pages-build-deployment/badge.svg)](https://github.com/masterPiece93/django-gauth/actions/workflows/pages/pages-build-deployment)
+
 
 * [Official Documentation](https://masterpiece93.github.io/django-gauth/)
 
