@@ -3,14 +3,14 @@ Auth Api's
 ~@ankit.kumar05
 """
 
-from django.conf import settings
-from django.shortcuts import redirect, render
-from django.urls import reverse
-from google.auth.transport import requests
-from google.oauth2 import id_token
-from google_auth_oauthlib.flow import Flow
+from django.conf import settings                # pylint: disable=E0401
+from django.shortcuts import redirect, render   # pylint: disable=E0401
+from django.urls import reverse                 # pylint: disable=E0401
+from google.auth.transport import requests      # pylint: disable=E0401
+from google.oauth2 import id_token              # pylint: disable=E0401
+from google_auth_oauthlib.flow import Flow      # pylint: disable=E0401
 
-import django_gauth.defaults as defaults
+from django_gauth import defaults
 from django_gauth.utilities import check_gauth_authentication, credentials_to_dict
 
 if hasattr(settings, "SCOPE") and settings.SCOPE:
@@ -93,12 +93,6 @@ def login(request):  # type: ignore
         "final_redirect" not in request.session
         or not request.session[FINAL_REDIRECT_KEY_NAME]
     ):
-        # request.session['final_redirect'] = final_redirect_uri(request) # directs where to land after login is successful.
-        print(
-            "final redirect : ",
-            GOOGLE_AUTH_FINAL_REDIRECT_URL
-            or request.build_absolute_uri(reverse("django_gauth:index")),
-        )
         request.session[FINAL_REDIRECT_KEY_NAME] = (
             GOOGLE_AUTH_FINAL_REDIRECT_URL
             or request.build_absolute_uri(reverse("django_gauth:index"))
@@ -141,7 +135,7 @@ def callback(request):  # type: ignore
     credentials = flow.credentials
     # verify token, while also retrieving information about the user
     id_info = id_token.verify_oauth2_token(
-        id_token=credentials._id_token,
+        id_token=credentials._id_token,     # pylint: disable=W0212
         request=requests.Request(),
         audience=settings.GOOGLE_CLIENT_ID,
         clock_skew_in_seconds=5,

@@ -2,8 +2,8 @@ import time
 from typing import Any, Dict, Tuple, Union
 from urllib.parse import urlparse
 
-from django.conf import Settings, settings
-from google.oauth2.credentials import Credentials
+from django.conf import Settings, settings          # pylint: disable=E0401
+from google.oauth2.credentials import Credentials   # pylint: disable=E0401
 
 __all__ = [
     "credentials_to_dict",
@@ -45,18 +45,12 @@ def check_gauth_authentication(session: Settings) -> Tuple[bool, object]:
     credentials_session_key = settings.CREDENTIALS_SESSION_KEY_NAME or "credentials"
 
     if credentials_session_key not in session:
-        # TODO: cleanup
-        # request.session['final_redirect'] = url_for('ssr_ui.google-sheets.all_sheets_data_api_request')
-        # return redirect(url_for('auth.login'))
         return False, None
 
     # Load credentials from the session.
     credentials = Credentials(**session[credentials_session_key])
 
     if not credentials.valid:
-        # TODO: cleanup
-        # session['final_redirect'] = url_for('ssr_ui.google-sheets.all_sheets_data_api_request')
-        # return redirect(url_for('auth.login'))
         return False, None
 
     if "id_info" in session and has_epoch_time_passed(session["id_info"]["exp"]):
@@ -66,8 +60,8 @@ def check_gauth_authentication(session: Settings) -> Tuple[bool, object]:
 
 
 def is_valid_google_url(url: str) -> bool:
-    VALID_SCHEME = "https"
-    VALID_DOMAIN = "docs.google.com"
+    VALID_SCHEME = "https"              # pylint: disable=C0103
+    VALID_DOMAIN = "docs.google.com"    # pylint: disable=C0103
     try:
         result = urlparse(url)
         return (
