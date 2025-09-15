@@ -37,6 +37,7 @@ dependencies = [
     "Django>=3.1",
     "google-api-python-client",
     "google-auth-oauthlib",
+    "mypy>=1.18.1",
 ]
 
 [project.urls]
@@ -88,6 +89,13 @@ lint = [
 
     # automatic code formatting to follow a consistent style
     "black",
+
+    # Typechecking
+    "mypy",
+
+    # logical linting
+    "pylint",
+    "pylint-actions",
 ]
 
 # Tools 
@@ -109,6 +117,7 @@ fix = "ruff check --fix src/django_gauth"
 # codespell = "codespell --toml ./pyproject.toml" # Not Working Properly
 lint = {composite = ["vulture", "ruff", "check_isort", "check_black"]}
 mypy = "mypy src/"
+pylint = "pylint -f actions src/"
 check_build = "check-wheel-contents dist/"
 
 [tool.black]
@@ -262,3 +271,15 @@ exclude = [
     "somedir",
     "*somefile.py",
 ]
+
+# Configuration for Pylint
+[tool.pylint.main]
+load-plugins = "pylint_actions" # Optional, for GitHub Actions annotations
+disable = [
+    "C0114", # Missing module docstring
+    "C0116", # Missing function or method docstring
+]
+max-line-length = 100
+
+[tool.pylint.messages_control]
+good-names = ["i", "j", "k", "ex", "Run", "_"]
