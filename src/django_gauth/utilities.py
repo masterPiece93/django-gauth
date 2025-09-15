@@ -9,16 +9,20 @@ __all__ = [
     "credentials_to_dict",
     "has_epoch_time_passed",
     "check_gauth_authentication",
-    "is_valid_google_url"
+    "is_valid_google_url",
 ]
 
+
 def credentials_to_dict(credentials: Credentials) -> Dict[str, Any]:
-    return {'token': credentials.token,
-            'refresh_token': credentials.refresh_token,
-            'token_uri': credentials.token_uri,
-            'client_id': credentials.client_id,
-            'client_secret': credentials.client_secret,
-            'scopes': credentials.scopes}
+    return {
+        "token": credentials.token,
+        "refresh_token": credentials.refresh_token,
+        "token_uri": credentials.token_uri,
+        "client_id": credentials.client_id,
+        "client_secret": credentials.client_secret,
+        "scopes": credentials.scopes,
+    }
+
 
 def has_epoch_time_passed(target_epoch_time: Union[int, float]) -> bool:
     """
@@ -33,6 +37,7 @@ def has_epoch_time_passed(target_epoch_time: Union[int, float]) -> bool:
     current_epoch_time = time.time()
     return target_epoch_time <= current_epoch_time
 
+
 def check_gauth_authentication(session: Settings) -> Tuple[bool, object]:
     """
     checks if authentication session still valid
@@ -44,29 +49,31 @@ def check_gauth_authentication(session: Settings) -> Tuple[bool, object]:
         # request.session['final_redirect'] = url_for('ssr_ui.google-sheets.all_sheets_data_api_request')
         # return redirect(url_for('auth.login'))
         return False, None
-    
+
     # Load credentials from the session.
-    credentials = Credentials(
-        **session[credentials_session_key])
+    credentials = Credentials(**session[credentials_session_key])
 
     if not credentials.valid:
         # TODO: cleanup
         # session['final_redirect'] = url_for('ssr_ui.google-sheets.all_sheets_data_api_request')
         # return redirect(url_for('auth.login'))
         return False, None
-    
+
     if "id_info" in session and has_epoch_time_passed(session["id_info"]["exp"]):
         return False, None
-    
+
     return True, credentials
+
 
 def is_valid_google_url(url: str) -> bool:
     VALID_SCHEME = "https"
     VALID_DOMAIN = "docs.google.com"
     try:
         result = urlparse(url)
-        return all([result.scheme, result.netloc]) and\
-                result.scheme==VALID_SCHEME and\
-                result.netloc==VALID_DOMAIN
+        return (
+            all([result.scheme, result.netloc])
+            and result.scheme == VALID_SCHEME
+            and result.netloc == VALID_DOMAIN
+        )
     except ValueError:
         return False
