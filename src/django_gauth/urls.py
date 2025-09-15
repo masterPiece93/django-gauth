@@ -1,10 +1,11 @@
 # urls
 
-from django.urls import path
+from django.urls import path    # pylint: disable=E0401
 
 from . import views
 
-app_name = "django_gauth"  # this key is used when you refer an endpoint by `reverse`
+# this key is used when you refer an endpoint by `reverse`
+app_name = "django_gauth"  # pylint: disable=C0103
 
 urlpatterns = [
     path("", views.index, name="index"),
