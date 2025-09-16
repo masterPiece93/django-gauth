@@ -1,6 +1,6 @@
 # urls
 
-from django.urls import path    # pylint: disable=E0401
+from django.urls import path  # pylint: disable=E0401
 
 from . import views
 

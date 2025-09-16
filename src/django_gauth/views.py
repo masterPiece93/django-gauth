@@ -3,14 +3,15 @@ Auth Api's
 ~@ankit.kumar05
 """
 
-from django.conf import settings                # pylint: disable=E0401
-from django.shortcuts import redirect, render   # pylint: disable=E0401
-from django.urls import reverse                 # pylint: disable=E0401
-from google.auth.transport import requests      # pylint: disable=E0401
-from google.oauth2 import id_token              # pylint: disable=E0401
-from google_auth_oauthlib.flow import Flow      # pylint: disable=E0401
+from django.conf import settings  # pylint: disable=E0401
+from django.shortcuts import redirect, render  # pylint: disable=E0401
+from django.urls import reverse  # pylint: disable=E0401
+from google.auth.transport import requests  # pylint: disable=E0401
+from google.oauth2 import id_token  # pylint: disable=E0401
+from google_auth_oauthlib.flow import Flow  # pylint: disable=E0401
 
 from django_gauth.utilities import check_gauth_authentication, credentials_to_dict
+
 
 def index(request):  # type: ignore
     is_authenticated, _ = check_gauth_authentication(request.session)
@@ -102,14 +103,16 @@ def callback(request):  # type: ignore
     credentials = flow.credentials
     # verify token, while also retrieving information about the user
     id_info = id_token.verify_oauth2_token(
-        id_token=credentials._id_token,     # pylint: disable=W0212
+        id_token=credentials._id_token,  # pylint: disable=W0212
         request=requests.Request(),
         audience=settings.GOOGLE_CLIENT_ID,
         clock_skew_in_seconds=5,
     )
     # session setting
     request.session["id_info"] = id_info
-    request.session[settings.CREDENTIALS_SESSION_KEY_NAME] = credentials_to_dict(credentials)
+    request.session[settings.CREDENTIALS_SESSION_KEY_NAME] = credentials_to_dict(
+        credentials
+    )
     # redirecting to the final redirect (i.e., logged in page)
     redirect_response = redirect(request.session[settings.FINAL_REDIRECT_KEY_NAME])
 
