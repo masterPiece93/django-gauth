@@ -2,8 +2,8 @@ import time
 from typing import Any, Dict, Tuple, Union
 from urllib.parse import urlparse
 
-from django.conf import Settings, settings          # pylint: disable=E0401
-from google.oauth2.credentials import Credentials   # pylint: disable=E0401
+from django.conf import Settings, settings  # pylint: disable=E0401
+from google.oauth2.credentials import Credentials  # pylint: disable=E0401
 
 __all__ = [
     "credentials_to_dict",
@@ -60,8 +60,8 @@ def check_gauth_authentication(session: Settings) -> Tuple[bool, object]:
 
 
 def is_valid_google_url(url: str) -> bool:
-    VALID_SCHEME = "https"              # pylint: disable=C0103
-    VALID_DOMAIN = "docs.google.com"    # pylint: disable=C0103
+    VALID_SCHEME = "https"  # pylint: disable=C0103
+    VALID_DOMAIN = "docs.google.com"  # pylint: disable=C0103
     try:
         result = urlparse(url)
         return (
