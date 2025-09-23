@@ -36,6 +36,7 @@ classifiers = [
     "Topic :: Internet :: WWW/HTTP",
     "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
     "Topic :: Utilities",
+    "Typing :: Typed"
 ]
 requires-python = ">=3.9"
 dependencies = [
