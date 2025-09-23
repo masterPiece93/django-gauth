@@ -15,7 +15,7 @@ maintainers = [
 description = "A Django app for providing the Google's discovery based Oauth2 authentication mechanism is HTTP/HTTPS oriented Django Servers/Projects."
 readme = "pypi.README.md"
 license = {file = "LICENSE"}
-keywords = ["django_gauth", "google", "telus", "oauth2", "auth"]
+keywords = ["django_gauth", "google", "oauth2", "auth"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Environment :: Web Environment",
