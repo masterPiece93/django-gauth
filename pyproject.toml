@@ -12,7 +12,7 @@ authors = [
 maintainers = [
     {name = "Ankit yadav", email="ankit8290@gmail.com"},
 ]
-description = "Default template for PDM package"
+description = "A Django app for providing the Google's discovery based Oauth2 authentication mechanism is HTTP/HTTPS oriented Django Servers/Projects."
 readme = "README.md"
 license = {file = "LICENSE"}
 keywords = ["django_gauth", "google", "telus", "oauth2", "auth"]
