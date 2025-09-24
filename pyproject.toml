@@ -12,18 +12,19 @@ authors = [
 maintainers = [
     {name = "Ankit yadav", email="ankit8290@gmail.com"},
 ]
-description = "Default template for PDM package"
+description = "A Django app for providing the Google's discovery based Oauth2 authentication mechanism is HTTP/HTTPS oriented Django Servers/Projects."
 readme = "README.md"
 license = {file = "LICENSE"}
-keywords = ["django_gauth", "google", "telus", "oauth2", "auth"]
+keywords = ["django_gauth", "google", "oauth2", "auth"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Web Environment",
+    "Framework :: Django",
+    "Framework :: Django :: 3.1",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -31,6 +32,10 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: CPython",
     "Topic :: Software Development :: Libraries :: Application Frameworks",
     "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+    "Topic :: Utilities",
+    "Typing :: Typed"
 ]
 requires-python = ">=3.9"
 dependencies = [
