@@ -219,3 +219,10 @@ running mkdocs :
 ```sh
 mkdocs serve
 ```
+
+## Important Points
+
+* always use pypi's [official classifier's](https://pypi.org/classifiers/) list to find classifiers for your python pacakge .
+    - NOTE : invalid classifiers will raise errors at the time of publishing package to pypi
+
+* use [validate-pyproject](https://pypi.org/project/validate-pyproject/) python utility for validating your `pyproject.toml` files during development , before publishing to pypi . 

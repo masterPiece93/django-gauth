@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "django_gauth"
-version = "0.1.1"
+version = "0.1.2"
 authors = [
     {name = "Ankit Kumar", email = "ankit.kumar05@telusdigital.com"},
     {name = "Ankit Yadav", email = "ankit8290@gmail.com"},
