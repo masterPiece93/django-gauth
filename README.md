@@ -25,7 +25,14 @@ pip install git+https://github.com/xavient/django-gauth.git
 ```
 
 from PyPi
-- Not Available Yet
+```sh
+pip install django-gauth
+```
+
+from test PyPi
+```sh
+pip install -i https://test.pypi.org/simple/ django-gauth
+```
 
 ## Quickstart
 
