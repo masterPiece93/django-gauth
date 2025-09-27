@@ -3,46 +3,14 @@ Auth Api's
 ~@ankit.kumar05
 """
 
-from django.conf import settings                # pylint: disable=E0401
-from django.shortcuts import redirect, render   # pylint: disable=E0401
-from django.urls import reverse                 # pylint: disable=E0401
-from google.auth.transport import requests      # pylint: disable=E0401
-from google.oauth2 import id_token              # pylint: disable=E0401
-from google_auth_oauthlib.flow import Flow      # pylint: disable=E0401
+from django.conf import settings  # pylint: disable=E0401
+from django.shortcuts import redirect, render  # pylint: disable=E0401
+from django.urls import reverse  # pylint: disable=E0401
+from google.auth.transport import requests  # pylint: disable=E0401
+from google.oauth2 import id_token  # pylint: disable=E0401
+from google_auth_oauthlib.flow import Flow  # pylint: disable=E0401
 
-from django_gauth import defaults
 from django_gauth.utilities import check_gauth_authentication, credentials_to_dict
-
-if hasattr(settings, "SCOPE") and settings.SCOPE:
-    SCOPE = settings.SCOPE
-else:
-    SCOPE = []
-
-if (
-    hasattr(settings, "GOOGLE_AUTH_FINAL_REDIRECT_URL")
-    and settings.GOOGLE_AUTH_FINAL_REDIRECT_URL
-):
-    GOOGLE_AUTH_FINAL_REDIRECT_URL = settings.GOOGLE_AUTH_FINAL_REDIRECT_URL
-else:
-    GOOGLE_AUTH_FINAL_REDIRECT_URL = defaults.GOOGLE_AUTH_FINAL_REDIRECT_URL
-
-if (
-    hasattr(settings, "CREDENTIALS_SESSION_KEY_NAME")
-    and settings.CREDENTIALS_SESSION_KEY_NAME
-):
-    CREDENTIALS_SESSION_KEY_NAME = settings.CREDENTIALS_SESSION_KEY_NAME
-else:
-    CREDENTIALS_SESSION_KEY_NAME = defaults.CREDENTIALS_SESSION_KEY_NAME
-
-if hasattr(settings, "STATE_KEY_NAME") and settings.STATE_KEY_NAME:
-    STATE_KEY_NAME = settings.STATE_KEY_NAME
-else:
-    STATE_KEY_NAME = defaults.STATE_KEY_NAME
-
-if hasattr(settings, "FINAL_REDIRECT_KEY_NAME") and settings.FINAL_REDIRECT_KEY_NAME:
-    FINAL_REDIRECT_KEY_NAME = settings.STATE_KEY_NAME
-else:
-    FINAL_REDIRECT_KEY_NAME = defaults.FINAL_REDIRECT_KEY_NAME
 
 
 def index(request):  # type: ignore
@@ -78,7 +46,7 @@ def login(request):  # type: ignore
         }
         # if you need additional scopes, add them here
         ,
-        scopes=SCOPE,
+        scopes=settings.SCOPE,
     )
 
     # flow.redirect_uri = get_redirect_uri(request) # use this when
@@ -88,13 +56,13 @@ def login(request):  # type: ignore
         access_type="offline", prompt="select_account", include_granted_scopes="true"
     )
 
-    request.session[STATE_KEY_NAME] = state
+    request.session[settings.STATE_KEY_NAME] = state
     if (
         "final_redirect" not in request.session
-        or not request.session[FINAL_REDIRECT_KEY_NAME]
+        or not request.session[settings.FINAL_REDIRECT_KEY_NAME]
     ):
-        request.session[FINAL_REDIRECT_KEY_NAME] = (
-            GOOGLE_AUTH_FINAL_REDIRECT_URL
+        request.session[settings.FINAL_REDIRECT_KEY_NAME] = (
+            settings.GOOGLE_AUTH_FINAL_REDIRECT_URL
             or request.build_absolute_uri(reverse("django_gauth:index"))
         )  # directs where to land after login is successful.
 
@@ -106,7 +74,7 @@ def callback(request):  # type: ignore
     - Google IDP response control transfer
     """
     # pull the state from the session
-    session_state = request.session.get(STATE_KEY_NAME)
+    session_state = request.session.get(settings.STATE_KEY_NAME)
     redirect_uri = request.build_absolute_uri(reverse("django_gauth:callback"))
     authorization_response = request.build_absolute_uri()
     # Flow Creation
@@ -135,15 +103,17 @@ def callback(request):  # type: ignore
     credentials = flow.credentials
     # verify token, while also retrieving information about the user
     id_info = id_token.verify_oauth2_token(
-        id_token=credentials._id_token,     # pylint: disable=W0212
+        id_token=credentials._id_token,  # pylint: disable=W0212
         request=requests.Request(),
         audience=settings.GOOGLE_CLIENT_ID,
         clock_skew_in_seconds=5,
     )
     # session setting
     request.session["id_info"] = id_info
-    request.session[CREDENTIALS_SESSION_KEY_NAME] = credentials_to_dict(credentials)
+    request.session[settings.CREDENTIALS_SESSION_KEY_NAME] = credentials_to_dict(
+        credentials
+    )
     # redirecting to the final redirect (i.e., logged in page)
-    redirect_response = redirect(request.session[FINAL_REDIRECT_KEY_NAME])
+    redirect_response = redirect(request.session[settings.FINAL_REDIRECT_KEY_NAME])
 
     return redirect_response
