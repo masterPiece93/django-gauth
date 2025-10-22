@@ -38,6 +38,7 @@ pdm@djangoGauth init
 
 
 **Add groups** ( if pdm.lock file doesn't exists )
+-
 ```sh
 pdm@djangoGauth lock --group dev --group lint
 ```
