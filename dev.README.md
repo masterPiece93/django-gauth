@@ -227,3 +227,31 @@ mkdocs serve
     - NOTE : invalid classifiers will raise errors at the time of publishing package to pypi
 
 * use [validate-pyproject](https://pypi.org/project/validate-pyproject/) python utility for validating your `pyproject.toml` files during development , before publishing to pypi . 
+
+* pdm dependency multi range adjusted addition
+```sh
+pdm add "package_name; environment_marker"
+```
+```sh
+pdm add "some-package; python_version >= '3.8' and python_version < '3.12'" "another-package; python_version >= '3.9' or python_version < '3.7'"
+```
+```sh
+pdm add "my-library==1.0.0; python_version < '3.9'" "my-library==2.0.0; python_version >= '3.9'"
+```
+For Example :
+    * ```sh
+    pdm@djangoGauth add "Django>=3.1; python_version>='3.9' and python_version<'3.11'" "Django>=4.2; python_version>='3.9'"
+    ```
+    * ```sh
+    pdm add "colorama; sys_platform == 'win32' and python_version < '3.9'"
+    ```
+
+* Django Compatibility Chart
+```
+Django 6.0 (under development): Supports Python 3.12, 3.13, and 3.14.
+Django 5.2.x series: The last series to support Python 3.10 and 3.11.
+Django 5.1: Supports Python 3.10, 3.11, 3.12, and 3.13.
+Django 5.0: Compatible with Python versions 3.10, 3.11, and 3.12.
+Django 4.2: Supports Python 3.8, 3.9, 3.10, 3.11, and 3.12 (as of 4.2.8). This is an LTS (Long Term Support) release. 
+Django 4.0: Supports Python 3.8, 3.9, and 3.10.
+```
