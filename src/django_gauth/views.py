@@ -134,7 +134,7 @@ def login(request): # type: ignore
             }
         }
         #if you need additional scopes, add them here
-        ,scopes=SCOPE
+        ,scopes=settings.SCOPE
     )
 
     # flow.redirect_uri = get_redirect_uri(request) # use this when 
@@ -201,7 +201,9 @@ def callback(request):  # type: ignore
     )
     # session setting
     request.session["id_info"] = id_info
-    request.session[CREDENTIALS_SESSION_KEY_NAME] = credentials_to_dict(credentials)
+    request.session[settings.CREDENTIALS_SESSION_KEY_NAME] = credentials_to_dict(
+        credentials
+    )
     # redirecting to the final redirect (i.e., logged in page)
     redirect_response = redirect(request.session[FINAL_REDIRECT_KEY_NAME])   
 

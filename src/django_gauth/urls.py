@@ -2,6 +2,8 @@
 
 from django.urls import path    # pylint: disable=E0401
 from django.conf import settings
+from django.urls import path  # pylint: disable=E0401
+
 from . import views
 
 # this key is used when you refer an endpoint by `reverse`
