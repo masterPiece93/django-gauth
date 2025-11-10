@@ -1,6 +1,8 @@
 # Google Auth <sup>[ Django ]<sup>
 
-![Static Badge](https://img.shields.io/badge/latest-0.1.2-blue)  [![pages-build-deployment](https://github.com/masterPiece93/django-gauth/actions/workflows/pages/pages-build-deployment/badge.svg)](https://github.com/masterPiece93/django-gauth/actions/workflows/pages/pages-build-deployment)  [![Pylint](https://github.com/masterPiece93/django-gauth/actions/workflows/pylint.yml/badge.svg)](https://github.com/masterPiece93/django-gauth/actions/workflows/pylint.yml) [![Upload Python Package](https://github.com/masterPiece93/django-gauth/actions/workflows/release.yml/badge.svg)](https://github.com/masterPiece93/django-gauth/actions/workflows/release.yml)
+![Static Badge](https://img.shields.io/badge/latest-0.1.2-blue) [![PyPI - Version](https://img.shields.io/pypi/v/django-gauth)](https://pypi.org/project/django-gauth) ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/django-gauth)
+  [![pages-build-deployment](https://github.com/masterPiece93/django-gauth/actions/workflows/pages/pages-build-deployment/badge.svg)](https://github.com/masterPiece93/django-gauth/actions/workflows/pages/pages-build-deployment)  [![Pylint](https://github.com/masterPiece93/django-gauth/actions/workflows/pylint.yml/badge.svg)](https://github.com/masterPiece93/django-gauth/actions/workflows/pylint.yml) [![Upload Python Package](https://github.com/masterPiece93/django-gauth/actions/workflows/release.yml/badge.svg)](https://github.com/masterPiece93/django-gauth/actions/workflows/release.yml) ![PyPI - Types](https://img.shields.io/pypi/types/django-gauth?color=pink)
+
 
 
 * [Official Documentation](https://masterpiece93.github.io/django-gauth/)
