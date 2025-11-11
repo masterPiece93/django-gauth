@@ -246,6 +246,12 @@ For Example :
     pdm add "colorama; sys_platform == 'win32' and python_version < '3.9'"
     ```
 
+* allow nox to use pyenv installed python versions
+
+```sh
+pyenv global 3.8.12 3.9.5 3.10.2
+```
+
 * Django Compatibility Chart
 ```
 Django 6.0 (under development): Supports Python 3.12, 3.13, and 3.14.
