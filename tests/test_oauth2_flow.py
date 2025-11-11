@@ -10,6 +10,7 @@ from unittest import skipIf
 
 import time
 from selenium.common.exceptions import TimeoutException
+from tests import env
 
 class GoogleOAuthTest(LiveServerTestCase):
     host = 'localhost'
@@ -26,9 +27,10 @@ class GoogleOAuthTest(LiveServerTestCase):
         self.browser.implicitly_wait(10) # Wait for elements to load
 
     def tearDown(self):
+        print("cleaning...")
         self.browser.quit()
 
-    @skipIf(os.environ.get('AUTOMATION', '0') == '1', "Skipping resource-intensive test by default.")
+    @skipIf(os.environ.get('AUTOMATION', '0') == '0', "Skipping resource-intensive test by default.")
     def test_google_oauth_login(self):
         
         self.browser.get(self.live_server_url + '/gauth/') # Your login URL
@@ -42,14 +44,14 @@ class GoogleOAuthTest(LiveServerTestCase):
         # Google's login page
         # Input test user credentials (replace with actual test user email/password)
         email_input = self.browser.find_element(By.ID, 'identifierId')
-        email_input.send_keys(os.environ.get('TEST_GOOGLE_ACCOUNT'))
+        email_input.send_keys(env.str('TEST_GOOGLE_ACCOUNT'))
         self.browser.find_element(By.ID, 'identifierNext').click()
 
         time.sleep(2) # for spoofing browser of not-a-bot
 
         # password_input = self.browser.find_element(By.NAME, 'password')
         password_input = self.browser.find_element(By.XPATH, "//div[@id='password']//input[@type='password']")
-        password_input.send_keys(os.environ.get('TEST_GOOGLE_PASSWORD'))
+        password_input.send_keys(env.str('TEST_GOOGLE_PASSWORD'))
         self.browser.find_element(By.ID, 'passwordNext').click()
 
         
@@ -71,3 +73,5 @@ class GoogleOAuthTest(LiveServerTestCase):
 
         self.assertIn('gauth', self.browser.current_url) # Or another expected URL
         self.assertIn('Authenticated', self.browser.page_source) # Or another indicator
+
+        self.browser.close()

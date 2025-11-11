@@ -265,7 +265,7 @@ Test Environment:
 - Certain settings are loaded from `.env` file .
 - you can specify your own test environment . Use `ENV_PATH` variable .
     - export it in your teminal/cmd , and give it a absolute path to a `.env` file .
-- you must use the `tests/.env.template` file and create a new `.test.env` file from it and populate desired values .
+- you must use the `tests/.env.template` file and create a new `.env.test` file from it and populate desired values .
 
 ## Documentation
 

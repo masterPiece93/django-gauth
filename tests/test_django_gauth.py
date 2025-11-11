@@ -6,9 +6,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.conf import settings
 from django.urls import clear_url_caches
-from environs import env
-env.read_env(".test.env", recurse=False)
-
+from tests import env
 
 # @pytest.fixture(scope="session")
 # def django_version():

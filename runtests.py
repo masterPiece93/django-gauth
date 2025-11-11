@@ -48,7 +48,7 @@ django.setup()
 from django.test.runner import DiscoverRunner
 
 def run_tests():
-    test_runner = DiscoverRunner(verbosity=1)
+    test_runner = DiscoverRunner(verbosity=2)
     failures = test_runner.run_tests(['tests']) # Specify your app's test package
     sys.exit(bool(failures))
 
