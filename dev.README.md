@@ -208,12 +208,66 @@ Using Make :
     cd devPlatform/
     ```
 
-- ```sh
+- first time use
+    ```sh
+    make all
+    ```
+
+- consecutive use
+    ```sh
     make runserver
     ```
 
-## Documentation
+## Testing
 
+all tests reside in `tests/` folder at root level
+
+- create test virtualenvironment
+    ```sh
+    python3 -m venv test-venv
+    ```
+    ```sh
+    activate test-venv/bin/activate
+    ```
+- install test requirements 
+    ```sh
+    pip install -r tests/requirements.txt
+    ```
+- run tests
+    ```sh
+    python3 runtests.py
+    ```
+
+There are certain automation tests , residing in same `tests` directory .
+They are switched-off by default .
+If you want to run them , then you can **turn on** the automation tests , setting `AUTOMATION='1'`
+If you only wish to run only the unit tests , then you can **turn off** the automation tests , setting `AUTOMATION='0'` or simply unsetting the `AUTOMATION` env variable.
+
+- setting
+    ```
+    # linux
+    export AUTOMATION="0"
+    ```
+- un-setting
+    ```
+    # linux
+    unset AUTOMATION
+    ```
+
+During the test runs , the Django TestRunner is set up .
+It creates a mock django project , to run your reusable app in & hence run your tests .
+
+The settings are setup partly using the devPlatform and partly setting manully .
+    - find these in `runtests.py` file
+
+Test Environment:
+
+- Certain settings are loaded from `.env` file .
+- you can specify your own test environment . Use `ENV_PATH` variable .
+    - export it in your teminal/cmd , and give it a absolute path to a `.env` file .
+- you must use the `tests/.env.template` file and create a new `.test.env` file from it and populate desired values .
+
+## Documentation
 
 running mkdocs :
 

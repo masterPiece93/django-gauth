@@ -3,6 +3,7 @@ Django
 django-environ
 -e .
 
+environs
 selenium
 undetected-chromedriver
 setuptools

@@ -28,7 +28,7 @@ class GoogleOAuthTest(LiveServerTestCase):
     def tearDown(self):
         self.browser.quit()
 
-    @skipIf(os.environ.get('NOX', '0') == '1', "Skipping resource-intensive test in NOX testing.")
+    @skipIf(os.environ.get('AUTOMATION', '0') == '1', "Skipping resource-intensive test by default.")
     def test_google_oauth_login(self):
         
         self.browser.get(self.live_server_url + '/gauth/') # Your login URL
