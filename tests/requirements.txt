@@ -1,0 +1,8 @@
+Django
+# .env parsing
+django-environ
+-e .
+
+selenium
+undetected-chromedriver
+setuptools
