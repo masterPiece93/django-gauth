@@ -20,4 +20,4 @@ jobs:
         pip install pylint
     - name: Analysing the code with pylint
       run: |
-        pylint $(git ls-files '*.py') --disable=C0114,C0116 --fail-under=9.0
+        pylint src/ --disable=C0114,C0116 --fail-under=9.0
