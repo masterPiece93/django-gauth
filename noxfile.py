@@ -22,7 +22,13 @@ import os
 python_versions = ["3.9", "3.10", "3.11", "3.12", "3.13"]
 # Define the Django versions you want to test against
 # NOTE: These will be installed dynamically
-django_versions = ["3.1", "4.2", "5.0", "5.1", "5.2"]  # Consult pytest-django docs for compatibility
+django_versions = [  # Consult pytest-django docs for compatibility
+    "3.1",
+    "4.2",
+    "5.0",
+    "5.1",
+    "5.2"
+]
 
 def embed_link(uri, label=None):
     """
@@ -51,7 +57,16 @@ def invalid_python_to_django(django_version, python_version):
         (django_version == "3.1" and python_version not in {"3.6", "3.7", "3.8", "3.9"}) or
         (django_version == "3.2" and python_version not in {"3.6", "3.7", "3.8", "3.9", "3.10"}) or
         (django_version == "3.2" and python_version not in {"3.6", "3.7", "3.8", "3.9", "3.10"}) or
-        (django_version == "4.2" and python_version not in {"3.6", "3.7", "3.8", "3.9", "3.10", "3.11", "3.12", "3.13"})
+        (django_version == "4.2" and
+            python_version not in {"3.6",
+            "3.7",
+            "3.8",
+            "3.9",
+            "3.10",
+            "3.11",
+            "3.12",
+            "3.13"
+        })
     )
 
 @nox.session(python=python_versions)
@@ -60,11 +75,13 @@ def test_django_versions__pytest(session: nox.Session, django: str):
     """
     Test the project with a matrix of Python and Django versions.
 
-    This Nox session runs tests for the `django-gauth` package across multiple Python and Django versions 
+    This Nox session runs tests for the `django-gauth` package 
+        across multiple Python and Django versions 
     to ensure compatibility and proper functionality.
 
     Args:
-        session (nox.Session): The Nox session object, which provides an isolated virtual environment.
+        session (nox.Session): The Nox session object, 
+            which provides an isolated virtual environment.
         django (str): The Django version to test against.
 
     Behavior:
@@ -87,8 +104,12 @@ def test_django_versions__pytest(session: nox.Session, django: str):
     """
     # Skip a specific combination
     if invalid_python_to_django(django, session.python):
-        django_compatibility_faq = "https://docs.djangoproject.com/en/5.2/faq/install/#what-python-version-can-i-use-with-django"
-        session.skip(f"Skipping Django {django} with Python {session.python}. {embed_link(django_compatibility_faq, 'FAQ')}")
+        django_compatibility_faq =\
+        "https://docs.djangoproject.com/en/5.2/faq/install/#what-python-version-can-i-use-with-django"
+        session.skip(
+            f"Skipping Django {django} with Python {session.python}. "
+            f"{embed_link(django_compatibility_faq, 'FAQ')}"
+        )
 
     # Install Self
     session.install(f".")

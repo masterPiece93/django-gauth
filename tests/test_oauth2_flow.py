@@ -53,7 +53,10 @@ class GoogleOAuthTest(LiveServerTestCase):
         self.browser.find_element(By.ID, 'identifierNext').click()
         time.sleep(2) # for spoofing browser of not-a-bot
         # password_input = self.browser.find_element(By.NAME, 'password')
-        password_input = self.browser.find_element(By.XPATH, "//div[@id='password']//input[@type='password']")
+        password_input = self.browser.find_element(
+            By.XPATH,
+            "//div[@id='password']//input[@type='password']"
+        )
         password_input.send_keys(env.str('TEST_GOOGLE_PASSWORD'))
         self.browser.find_element(By.ID, 'passwordNext').click()
         time.sleep(2) # for spoofing browser of not-a-bot

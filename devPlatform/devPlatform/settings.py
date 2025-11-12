@@ -21,13 +21,22 @@ env = environ.Env(
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+ENV = os.environ.get('ENV', 'local')
 # Take environment variables from .env file
 try:
     environ.Env.read_env(os.environ['ENV_PATH'])
     print('loaded environment : from ENV_PATH')
 except:
-    environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
-    print('loaded environment : from BASE_DIR')
+    env_file_name = '.env'
+    if ENV == 'prod':
+        env_file_suffix = '.prod'
+    if ENV == 'test':
+        env_file_suffix = '.test'
+    else:
+        env_file_suffix = ''
+    env_file_name += env_file_suffix
+    environ.Env.read_env(os.path.join(BASE_DIR, env_file_name))
+    print(f'loaded environment : from BASE_DIR : `{env_file_name=}`')
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/

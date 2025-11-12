@@ -48,7 +48,9 @@ from tests import env
 #         assert django_version.startswith("5.") or django_version.startswith("4.") # Example: Check if Django is a 5.x version
 
 class GeneralTest(TestCase):
-     
+    """
+    TestSuite for Generic Tests
+    """
     def test_oauth2_env(self):
         self.assertEqual(settings.GOOGLE_CLIENT_ID, env.str("GOOGLE_CLIENT_ID"))
         self.assertEqual(settings.GOOGLE_CLIENT_SECRET, env.str("GOOGLE_CLIENT_SECRET"))
@@ -67,7 +69,9 @@ class GeneralTest(TestCase):
         self.assertIn('django.contrib.admin', installed_apps)
 
 class IndexViewTest(TestCase):
-
+    """
+    TestSuite for Landing Page
+    """
     def setUp(self):
         self.client = Client()
 
@@ -79,7 +83,9 @@ class IndexViewTest(TestCase):
 
 
 class LoginViewTest(TestCase):
-
+    """
+    TestSuite for Login Endpoint
+    """
     def setUp(self):
         self.client = Client()
 
@@ -92,7 +98,9 @@ class LoginViewTest(TestCase):
 @override_settings(DEBUG=True)
 @override_settings(ROOT_URLCONF='devPlatform.devPlatform.urls')
 class DebugApiTest(TestCase):
-
+    """
+    TestSuite for Debug Endpoint
+    """
     def setUp(self):
         self.client = Client()
 

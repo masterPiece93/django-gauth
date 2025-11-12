@@ -5,7 +5,9 @@ import sys
 import django
 from django.conf import settings
 
-from devPlatform.devPlatform import settings as devPlatformSettings
+# from devPlatform.devPlatform import settings as SettingsHub
+# SettingsHub.ROOT_URLCONF = 'devPlatform.devPlatform.urls'
+from tests import test_settings as SettingsHub
 
 # Configure minimal settings for testing
 settings.configure(
@@ -18,20 +20,20 @@ settings.configure(
             'NAME': ':memory:',
         }
     },
-    INSTALLED_APPS=devPlatformSettings.INSTALLED_APPS,
-    MIDDLEWARE=devPlatformSettings.MIDDLEWARE,
-    TEMPLATES=devPlatformSettings.TEMPLATES,
-    ROOT_URLCONF = 'devPlatform.devPlatform.urls', # Point to your test URLs
-    USE_TZ = devPlatformSettings.USE_TZ,
-    STATIC_URL = devPlatformSettings.STATIC_URL,
-    DEFAULT_AUTO_FIELD = devPlatformSettings.DEFAULT_AUTO_FIELD,
+    INSTALLED_APPS=SettingsHub.INSTALLED_APPS,  # pylint: disable=no-member
+    MIDDLEWARE=SettingsHub.MIDDLEWARE,  # pylint: disable=no-member
+    TEMPLATES=SettingsHub.TEMPLATES,    # pylint: disable=no-member
+    ROOT_URLCONF = SettingsHub.ROOT_URLCONF, # pylint: disable=no-member
+    USE_TZ = SettingsHub.USE_TZ,    # pylint: disable=no-member
+    STATIC_URL = SettingsHub.STATIC_URL,    # pylint: disable=no-member
+    DEFAULT_AUTO_FIELD = SettingsHub.DEFAULT_AUTO_FIELD,    # pylint: disable=no-member
     # Gauth App Variables
-    GOOGLE_CLIENT_ID=devPlatformSettings.GOOGLE_CLIENT_ID,
-    GOOGLE_CLIENT_SECRET=devPlatformSettings.GOOGLE_CLIENT_SECRET,
-    GOOGLE_AUTH_FINAL_REDIRECT_URL=devPlatformSettings.GOOGLE_AUTH_FINAL_REDIRECT_URL,
-    CREDENTIALS_SESSION_KEY_NAME=devPlatformSettings.CREDENTIALS_SESSION_KEY_NAME,
-    STATE_KEY_NAME=devPlatformSettings.STATE_KEY_NAME,
-    SCOPE=devPlatformSettings.SCOPE,
+    GOOGLE_CLIENT_ID=SettingsHub.GOOGLE_CLIENT_ID,  # pylint: disable=no-member
+    GOOGLE_CLIENT_SECRET=SettingsHub.GOOGLE_CLIENT_SECRET,  # pylint: disable=no-member
+    GOOGLE_AUTH_FINAL_REDIRECT_URL=SettingsHub.GOOGLE_AUTH_FINAL_REDIRECT_URL,  # pylint: disable=no-member
+    CREDENTIALS_SESSION_KEY_NAME=SettingsHub.CREDENTIALS_SESSION_KEY_NAME,  # pylint: disable=no-member
+    STATE_KEY_NAME=SettingsHub.STATE_KEY_NAME,  # pylint: disable=no-member
+    SCOPE=SettingsHub.SCOPE,    # pylint: disable=no-member
     # DJANGO_GAUTH_UI_CONFIG=devPlatformSettings.DJANGO_GAUTH_UI_CONFIG,
 )
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1' # :local-development
