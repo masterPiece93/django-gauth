@@ -308,6 +308,33 @@ running mkdocs :
 mkdocs serve
 ```
 
+## Linting , Formatting and Typing
+
+- via `pdm`
+    - regular lint 
+        ```sh
+        pdm@djangoGauth lint
+        ```
+    - pylint
+        ```sh
+        pdm@djangoGauth pylint
+        ```
+    - mypy
+        ```sh
+        pdm@djangoGauth mypy
+        ```
+    > refer `pyproject.toml` for more availavle commands in [tool.pdm.scripts] section
+
+- custom
+
+    - setup a seperate venv for this purpose
+    - activate
+    - run pylint 
+        ```sh
+        pylint $(git ls-files '*.py') --disable=C0114,C0116 --fail-under=9.0
+        ```
+        > This one is used in `pylint` GitHub Action
+
 ## Important Points
 
 * always use pypi's [official classifier's](https://pypi.org/classifiers/) list to find classifiers for your python pacakge .
