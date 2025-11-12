@@ -46,8 +46,21 @@ from django.test.runner import DiscoverRunner
 def run_tests():
     test_runner = DiscoverRunner(verbosity=2)
     failures = test_runner.run_tests(['tests']) # Specify your app's test package
-    sys.exit(bool(failures))
+    # sys.exit(bool(failures))
+    return failures
 
 if __name__ == '__main__':
     # Export ENV_PATH for different env file
-    run_tests()
+    # Export ENV if ENV_PATH is not set
+    from coverage import Coverage
+    # Initialize Coverage
+    cov = Coverage(source=['src'], omit=['*migrations*', '*tests*']) # Customize source and omit
+    cov.start()
+    failures=run_tests()
+    # Stop Coverage and generate report
+    cov.stop()
+    cov.save()
+    cov.report()
+    cov.html_report(directory='htmlcov')
+
+    sys.exit(bool(failures))

@@ -1,9 +1,13 @@
 Django
 # .env parsing
 django-environ
+# self
 -e .
 
 environs
+# automation
 selenium
 undetected-chromedriver
 setuptools
+# coverage
+coverage
