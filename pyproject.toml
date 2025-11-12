@@ -251,6 +251,8 @@ check_untyped_defs = true
 # https://docs.pytest.org/en/latest/reference/customize.html#pyproject-toml
 [tool.pytest.ini_options]
 testpaths = "tests"  # directory containing your tests
+DJANGO_SETTINGS_MODULE = "tests.test_settings"
+pythonpath = ["."]
 norecursedirs = [
     ".vscode",
     "__pycache__"

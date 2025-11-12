@@ -18,16 +18,7 @@ settings.configure(
             'NAME': ':memory:',
         }
     },
-    INSTALLED_APPS=(
-        'django.contrib.admin',
-        'django.contrib.auth',
-        'django.contrib.contenttypes',
-        'django.contrib.sessions',
-        'django.contrib.messages',
-        'django.contrib.staticfiles',
-        'django_gauth' # your app
-        # Add any other apps your reusable app depends on
-    ),
+    INSTALLED_APPS=devPlatformSettings.INSTALLED_APPS,
     MIDDLEWARE=devPlatformSettings.MIDDLEWARE,
     TEMPLATES=devPlatformSettings.TEMPLATES,
     ROOT_URLCONF = 'devPlatform.devPlatform.urls', # Point to your test URLs
