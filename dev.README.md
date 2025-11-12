@@ -222,6 +222,10 @@ Using Make :
 
 all tests reside in `tests/` folder at root level
 
+**Django Test Runner**
+
+You can run tests quickly with django test runner in an isolated environment .
+
 - create test virtualenvironment
     ```sh
     python3 -m venv test-venv
@@ -238,7 +242,7 @@ all tests reside in `tests/` folder at root level
     python3 runtests.py
     ```
 
-There are certain automation tests , residing in same `tests` directory .
+There are certain automation tests also , residing in same `tests` directory .
 They are switched-off by default .
 If you want to run them , then you can **turn on** the automation tests , setting `AUTOMATION='1'`
 If you only wish to run only the unit tests , then you can **turn off** the automation tests , setting `AUTOMATION='0'` or simply unsetting the `AUTOMATION` env variable.
@@ -266,6 +270,35 @@ Test Environment:
 - you can specify your own test environment . Use `ENV_PATH` variable .
     - export it in your teminal/cmd , and give it a absolute path to a `.env` file .
 - you must use the `tests/.env.template` file and create a new `.env.test` file from it and populate desired values .
+
+
+**Nox**
+
+we have configured not to run tests with different `django` and `python-versions` .
+
+Also we have option on tool for running tests
+- via `Django Test Runner`
+- via `django-pytest`
+
+for running tests via `Django Test Runner` , we have nox session : `test_django_versions__runner`
+- run command
+    ```sh
+    ./nox.sh -s test_django_versions__runner
+    ```
+
+for running tests via `django-pytest` , we have nox session : `test_django_versions__pytest`
+- run command
+    ```sh
+    ./nox.sh -s test_django_versions__pytest
+    ```
+
+> pytest is configured to use django project settigs form `tests/test_settings.py` ( indirectly from devPlatform/devPlatform/settings.py )
+
+> django runner is configured to use django project settigs form `tests/test_settings.py` ( indirectly from devPlatform/devPlatform/settings.py )
+
+NOTE
+* `tests/test_settings.py` inherits all the settings from `indirectly from devPlatform/devPlatform/settings.py` , and overrides the ones that are required for testing purpose .
+
 
 ## Documentation
 
