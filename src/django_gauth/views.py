@@ -157,12 +157,7 @@ def callback(request: HttpRequest):  # type: ignore
                 "token_uri": "https://oauth2.googleapis.com/token",
             }
         },
-        scopes=[
-            "https://www.googleapis.com/auth/userinfo.email",
-            "https://www.googleapis.com/auth/userinfo.profile",
-            "openid",
-            "https://www.googleapis.com/auth/drive",
-        ],
+        scopes=settings.SCOPE,
         state=session_state,
     )
 
