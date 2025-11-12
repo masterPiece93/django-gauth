@@ -18,50 +18,6 @@ from google_auth_oauthlib.flow import Flow
 import django_gauth.defaults as defaults
 from django_gauth.utilities import check_gauth_authentication, credentials_to_dict
 
-if not (hasattr(settings, "SCOPE") and settings.SCOPE):
-    raise Exception(
-        "[MissingGoogleScope] | missing required settings variable:`SCOPE`."
-    )
-else:
-    SCOPE = settings.SCOPE
-
-if not (hasattr(settings, "GOOGLE_CLIENT_ID") and settings.GOOGLE_CLIENT_ID):
-    raise Exception(
-        "[MissingGoogleClientCredentials] | missing required settings variable:`GOOGLE_CLIENT_ID`"
-    )
-
-if not (hasattr(settings, "GOOGLE_CLIENT_SECRET") and settings.GOOGLE_CLIENT_SECRET):
-    raise Exception(
-        "[MissingGoogleClientCredentials] | missing required settings variable:`GOOGLE_CLIENT_SECRET`"
-    )
-
-if (
-    hasattr(settings, "GOOGLE_AUTH_FINAL_REDIRECT_URL")
-    and settings.GOOGLE_AUTH_FINAL_REDIRECT_URL
-):
-    GOOGLE_AUTH_FINAL_REDIRECT_URL = settings.GOOGLE_AUTH_FINAL_REDIRECT_URL
-else:
-    GOOGLE_AUTH_FINAL_REDIRECT_URL = defaults.GOOGLE_AUTH_FINAL_REDIRECT_URL
-
-if (
-    hasattr(settings, "CREDENTIALS_SESSION_KEY_NAME")
-    and settings.CREDENTIALS_SESSION_KEY_NAME
-):
-    CREDENTIALS_SESSION_KEY_NAME = settings.CREDENTIALS_SESSION_KEY_NAME
-else:
-    CREDENTIALS_SESSION_KEY_NAME = defaults.CREDENTIALS_SESSION_KEY_NAME
-
-if hasattr(settings, "STATE_KEY_NAME") and settings.STATE_KEY_NAME:
-    STATE_KEY_NAME = settings.STATE_KEY_NAME
-else:
-    STATE_KEY_NAME = defaults.STATE_KEY_NAME
-
-if hasattr(settings, "FINAL_REDIRECT_KEY_NAME") and settings.FINAL_REDIRECT_KEY_NAME:
-    FINAL_REDIRECT_KEY_NAME = settings.STATE_KEY_NAME
-else:
-    FINAL_REDIRECT_KEY_NAME = defaults.FINAL_REDIRECT_KEY_NAME
-
-
 def get_origin_url(request: HttpRequest) -> tuple[Optional[str], bool]:  # type: ignore
     """check origin url"""
 
@@ -168,20 +124,19 @@ def login(request: HttpRequest):  # type: ignore
         access_type="offline", prompt="select_account", include_granted_scopes="true"
     )
 
-    request.session[STATE_KEY_NAME] = state
+    request.session[settings.STATE_KEY_NAME] = state
     if origin_url and is_valid_origin:
-        request.session[FINAL_REDIRECT_KEY_NAME] = origin_url
+        request.session[settings.FINAL_REDIRECT_KEY_NAME] = origin_url
     else:
         if (
-            FINAL_REDIRECT_KEY_NAME not in request.session
-            or not request.session[FINAL_REDIRECT_KEY_NAME]
+            settings.FINAL_REDIRECT_KEY_NAME not in request.session
+            or not request.session[settings.FINAL_REDIRECT_KEY_NAME]
         ):
             # directs where to land after login is successful.
-            request.session[FINAL_REDIRECT_KEY_NAME] = (
-                GOOGLE_AUTH_FINAL_REDIRECT_URL
+            request.session[settings.FINAL_REDIRECT_KEY_NAME] = (
+                settings.GOOGLE_AUTH_FINAL_REDIRECT_URL
                 or request.build_absolute_uri(reverse("django_gauth:index"))
             )  # directs where to land after login is successful.
-    # print("final redirect : ", GOOGLE_AUTH_FINAL_REDIRECT_URL or request.build_absolute_uri(reverse("django_gauth:index")))
     return redirect(authorization_url)
 
 
@@ -190,7 +145,7 @@ def callback(request: HttpRequest):  # type: ignore
     - Google IDP response control transfer
     """
     # pull the state from the session
-    session_state = request.session.get(STATE_KEY_NAME)
+    session_state = request.session.get(settings.STATE_KEY_NAME)
     redirect_uri = request.build_absolute_uri(reverse("django_gauth:callback"))
     authorization_response = request.build_absolute_uri()
     # Flow Creation
@@ -219,7 +174,7 @@ def callback(request: HttpRequest):  # type: ignore
     credentials = flow.credentials
     # verify token, while also retrieving information about the user
     id_info = id_token.verify_oauth2_token(
-        id_token=credentials._id_token,
+        id_token=credentials._id_token, # pylint: disable=protected-access
         request=requests.Request(),
         audience=settings.GOOGLE_CLIENT_ID,
         clock_skew_in_seconds=5,
@@ -230,19 +185,15 @@ def callback(request: HttpRequest):  # type: ignore
         credentials
     )
     # redirecting to the final redirect (i.e., logged in page)
-    redirect_response = redirect(request.session[FINAL_REDIRECT_KEY_NAME])
+    redirect_response = redirect(request.session[settings.FINAL_REDIRECT_KEY_NAME])
 
     return redirect_response
-
-
-import copy
-
 
 def debug_information(request: HttpRequest):  # type: ignore
     """
     Debug Information
     """
-    session_data: dict = copy.deepcopy(dict(request.session))
+    session_data: dict = deepcopy(dict(request.session))
     # sanitizing `id_info`
     if "id_info" in session_data:
         session_data["id_info"].pop("iss", None)
@@ -252,7 +203,7 @@ def debug_information(request: HttpRequest):  # type: ignore
     # sanitizing `credentials`
     if "credentials" in session_data:
         value = session_data.pop("credentials")
-        session_data["debug"]["credentials_info"] = dict()
+        session_data["debug"]["credentials_info"] = {}
         # add token info
         if "token" in value and value["token"]:
             session_data["debug"]["credentials_info"]["token"] = "Exists"

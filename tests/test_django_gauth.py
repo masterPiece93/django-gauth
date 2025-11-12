@@ -1,51 +1,12 @@
 import sys
 from importlib import import_module, reload
 
-import django
 from django.conf import settings
 from django.test import TestCase, override_settings
 from django.test.client import Client
 from django.urls import clear_url_caches, reverse
 
 from tests import env
-
-# @pytest.fixture(scope="session")
-# def django_version():
-#     """A session-scoped fixture that returns the Django version information."""
-#     return django.get_version()
-
-# @pytest.fixture(scope="session")
-# def python_version():
-#     """A session-scoped fixture that returns the Python version information."""
-#     version = sys.version_info
-#     print(f"\nPython version in session fixture: {version.major}.{version.minor}.{version.micro}")
-#     return version
-
-# @pytest.fixture(scope="session")
-# def status_file(tmp_path_factory):
-#     """
-#     Fixture to provide a file object for recording test statuses.
-#     The file is created in a temporary directory and closed at the end of the session.
-#     """
-#     file_path = tmp_path_factory.mktemp("test_status") / "test_results.txt"
-#     with open(file_path, "w") as f:
-#         f.write("Test Status Report:\n")
-    
-#     # Open the file again in append mode for subsequent writes
-#     file_handle = open(file_path, "a")
-#     yield file_handle
-#     file_handle.close()
-
-# def test_django_version_fixture(django_version, python_version, status_file):
-    
-#     status_file.write(
-#         f"Django version from fixture: {django_version=}"
-#         f"Django version from fixture: {python_version.major}.{python_version.minor}.{python_version.micro}"
-#     )
-#     if python_version.major == 3 and python_version.minor <= 9:
-#         assert django_version.startswith("3.") or django_version.startswith("4.") # Example: Check if Django is a 4.x version
-#     if python_version.major == 3 and python_version.minor > 9:
-#         assert django_version.startswith("5.") or django_version.startswith("4.") # Example: Check if Django is a 5.x version
 
 class GeneralTest(TestCase):
     """

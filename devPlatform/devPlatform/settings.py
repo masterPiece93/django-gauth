@@ -26,7 +26,7 @@ ENV = os.environ.get('ENV', 'local')
 try:
     environ.Env.read_env(os.environ['ENV_PATH'])
     print('loaded environment : from ENV_PATH')
-except:
+except Exception:
     env_file_name = '.env'
     if ENV == 'prod':
         env_file_suffix = '.prod'

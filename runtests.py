@@ -4,6 +4,7 @@ import sys
 
 import django
 from django.conf import settings
+from django.test.runner import DiscoverRunner
 
 # from devPlatform.devPlatform import settings as SettingsHub
 # SettingsHub.ROOT_URLCONF = 'devPlatform.devPlatform.urls'
@@ -40,9 +41,6 @@ os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1' # :local-development
 
 django.setup()
 
-from django.test.runner import DiscoverRunner
-
-
 def run_tests():
     test_runner = DiscoverRunner(verbosity=2)
     failures = test_runner.run_tests(['tests']) # Specify your app's test package
@@ -53,6 +51,7 @@ if __name__ == '__main__':
     # Export ENV_PATH for different env file
     # Export ENV if ENV_PATH is not set
     from coverage import Coverage
+
     # Initialize Coverage
     cov = Coverage(source=['src'], omit=['*migrations*', '*tests*']) # Customize source and omit
     cov.start()

@@ -13,9 +13,8 @@ Features:
 Usage:
 Run `nox` to execute all sessions or specify a session using `nox -s <session_name>`.
 """
-
-import nox
 import os
+import nox  # pylint: disable=import-error
 
 # Define the Python versions you want to test with
 # NOTE: Use pyenv for maintaining multiple Python versions
@@ -112,23 +111,21 @@ def test_django_versions__pytest(session: nox.Session, django: str):
         )
 
     # Install Self
-    session.install(f".")
-
+    session.install(".")
     # Install the specified Django version dynamically
     session.install(f"Django=={django}")
-
     # Install additional dependencies required for testing
     session.install("environs")  # For environment variable management
     session.install("django-environ")
-    
+    # Automation Testing Related
     session.install("selenium")
     session.install("undetected-chromedriver")
     session.install("setuptools")
-
+    # Pytest Related
     session.install("pytest")  # Pytest :Test runner
     session.install("pytest-django")  # Pytest :Plugin Django-specific
-    
-    NOX_RUNTIME_ENV = {
+    # NOX ENV
+    NOX_RUNTIME_ENV = { # pylint: disable=invalid-name
         "AUTOMATION": "0",  # Google OAuth client ID
         "ENV_PATH": "/home/ubuntu/Documents/personal/django-gauth/tests/.env.test",  # Google OAuth client secret
         "GOOGLE_CLIENT_ID": os.environ["GOOGLE_CLIENT_ID"],  # Google OAuth client ID
@@ -170,27 +167,27 @@ def test_django_versions__runner(session: nox.Session, django: str):
     """
     # Skip a specific combination
     if invalid_python_to_django(django, session.python):
-        django_compatibility_faq = "https://docs.djangoproject.com/en/5.2/faq/install/#what-python-version-can-i-use-with-django"
-        session.skip(f"Skipping Django {django} with Python {session.python}. {embed_link(django_compatibility_faq, 'FAQ')}")
-
+        django_compatibility_faq =\
+            "https://docs.djangoproject.com/en/5.2/faq/install/#what-python-version-can-i-use-with-django"
+        session.skip(
+            f"Skipping Django {django} with Python {session.python}."
+            f"{embed_link(django_compatibility_faq, 'FAQ')}"
+        )
     # Install Self
-    session.install(f".")
-
+    session.install(".")
     # Install the specified Django version dynamically
     session.install(f"Django=={django}")
-
     # Install additional dependencies required for testing
     session.install("environs")  # For environment variable management
     session.install("django-environ")
-    
+    # Automation Testing Related
     session.install("selenium")
     session.install("undetected-chromedriver")
     session.install("setuptools")
-
-    NOX_RUNTIME_ENV = {
+    # NOX ENV
+    NOX_RUNTIME_ENV = { # pylint: disable=invalid-name
         "AUTOMATION": "0",  # Google OAuth client ID
         "ENV_PATH": "/home/ubuntu/Documents/personal/django-gauth/tests/.env.test",  # Google OAuth client secret
     }
     # Run Django Test runner
     session.run("python3", "runtests", env=NOX_RUNTIME_ENV)
-
