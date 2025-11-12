@@ -24,10 +24,8 @@ class ErrorCodes(Enum):
         "Please include required google oauth2 web client \
         credentials ( GOOGLE_CLIENT_ID & GOOGLE_CLIENT_SECRET )",
     )
-    E004 = (
-        "INVALID_GAUTH_SCOPE",
-        "Please set valid oauth2 SCOPE"
-    )
+    E004 = ("INVALID_GAUTH_SCOPE", "Please set valid oauth2 SCOPE")
+
 
 formulate_check_id: Callable = lambda code: f"{__app_label__}.{code}"
 
@@ -47,8 +45,8 @@ def check_project_settings(
     if not hasattr(settings, "GOOGLE_CLIENT_ID"):
         errors.append(
             Error(
-                "GOOGLE_CLIENT_ID is not defined in settings."\
-                +   f"Required for app:{__app_label__} to work.",
+                "GOOGLE_CLIENT_ID is not defined in settings."
+                + f"Required for app:{__app_label__} to work.",
                 hint="Define GOOGLE_CLIENT_ID in your project settings.py",
                 id=formulate_check_id(ErrorCodes.E003.name),
             )
@@ -56,8 +54,8 @@ def check_project_settings(
     if not hasattr(settings, "GOOGLE_CLIENT_SECRET"):
         errors.append(
             Error(
-                "GOOGLE_CLIENT_SECRET is not defined in settings."\
-                +   f"Required for app:{__app_label__} to work.",
+                "GOOGLE_CLIENT_SECRET is not defined in settings."
+                + f"Required for app:{__app_label__} to work.",
                 hint="Define GOOGLE_CLIENT_SECRET in your project settings.py",
                 id=formulate_check_id(ErrorCodes.E003.name),
             )
@@ -76,10 +74,10 @@ def check_project_middlewares(
     if not session_middleware_path in settings.MIDDLEWARE:
         errors.append(
             Error(
-                "Django SessionMiddleware is not included in settings. "\
-                    +   "Required for app:{__app_label__} to work.",
-                hint=f"Define {session_middleware_path} in your "\
-                    +   "project`s MIDDLEWARE variable in settings.py",
+                "Django SessionMiddleware is not included in settings. "
+                + "Required for app:{__app_label__} to work.",
+                hint=f"Define {session_middleware_path} in your "
+                + "project`s MIDDLEWARE variable in settings.py",
                 id=formulate_check_id(ErrorCodes.E002.name),
             )
         )

@@ -12,10 +12,10 @@ from django.core.checks import Warning as SysCheckWarning  # pylint: disable=E04
 
 from django_gauth import defaults
 from django_gauth._checks import (
+    ErrorCodes,
     check_project_middlewares,
     check_project_settings,
     formulate_check_id,
-    ErrorCodes
 )
 
 warnings.simplefilter("default")
@@ -47,20 +47,18 @@ class DjangoGauthConfig(AppConfig):
 
 
 @register(Tags.django_gauth_compatibility)
-def set_defaults(
-    app_configs: object, **kwargs: Any  # pylint: disable=W0613
-) -> list:
+def set_defaults(app_configs: object, **kwargs: Any) -> list:  # pylint: disable=W0613
     errors = []
     if not hasattr(settings, "SCOPE"):
         setattr(settings, "SCOPE", [])
         errors.append(
             SysCheckWarning(
-                "SCOPE setting is not defined. Defaulting to `[]`."\
-                +   "It may affect the normal flow of oauth and might not run as expected."\
-                +   "Please rectify ASAP.",
+                "SCOPE setting is not defined. Defaulting to `[]`."
+                + "It may affect the normal flow of oauth and might not run as expected."
+                + "Please rectify ASAP.",
                 hint=(
-                    "See https://masterpiece93.github.io/django-gauth/settings/ "\
-                    +   "for more information."
+                    "See https://masterpiece93.github.io/django-gauth/settings/ "
+                    + "for more information."
                 ),
                 id=formulate_check_id(ErrorCodes.E004.name),
             )
@@ -72,13 +70,17 @@ def set_defaults(
             "GOOGLE_AUTH_FINAL_REDIRECT_URL",
             defaults.GOOGLE_AUTH_FINAL_REDIRECT_URL,
         )
-        _msg = "GOOGLE_AUTH_FINAL_REDIRECT_URL settings is not defined."\
-        +f"Defaulting to `{defaults.GOOGLE_AUTH_FINAL_REDIRECT_URL}`"
+        _msg = (
+            "GOOGLE_AUTH_FINAL_REDIRECT_URL settings is not defined."
+            + f"Defaulting to `{defaults.GOOGLE_AUTH_FINAL_REDIRECT_URL}`"
+        )
         warnings.warn(_msg)
     else:
         if not settings.GOOGLE_AUTH_FINAL_REDIRECT_URL:
-            _msg = "GOOGLE_AUTH_FINAL_REDIRECT_URL setting is set to"\
-            +   f"`{settings.GOOGLE_AUTH_FINAL_REDIRECT_URL}` which is logically incorrect."
+            _msg = (
+                "GOOGLE_AUTH_FINAL_REDIRECT_URL setting is set to"
+                + f"`{settings.GOOGLE_AUTH_FINAL_REDIRECT_URL}` which is logically incorrect."
+            )
             info = Info(_msg)
             errors.append(info)
     if not hasattr(settings, "CREDENTIALS_SESSION_KEY_NAME"):
@@ -87,38 +89,48 @@ def set_defaults(
             "CREDENTIALS_SESSION_KEY_NAME",
             defaults.CREDENTIALS_SESSION_KEY_NAME,
         )
-        _msg = "CREDENTIALS_SESSION_KEY_NAME settings is not defined."\
-        +   "Defaulting to `{defaults.CREDENTIALS_SESSION_KEY_NAME}`"
+        _msg = (
+            "CREDENTIALS_SESSION_KEY_NAME settings is not defined."
+            + "Defaulting to `{defaults.CREDENTIALS_SESSION_KEY_NAME}`"
+        )
         warnings.warn(_msg)
     else:
         if not settings.CREDENTIALS_SESSION_KEY_NAME:
-            _msg = "CREDENTIALS_SESSION_KEY_NAME setting is set to"\
-            +   "`{settings.CREDENTIALS_SESSION_KEY_NAME}` which is logically incorrect."
+            _msg = (
+                "CREDENTIALS_SESSION_KEY_NAME setting is set to"
+                + "`{settings.CREDENTIALS_SESSION_KEY_NAME}` which is logically incorrect."
+            )
             info = Info(_msg)
             errors.append(info)
     if not hasattr(settings, "STATE_KEY_NAME"):
         setattr(settings, "STATE_KEY_NAME", defaults.STATE_KEY_NAME)
-        _msg = "STATE_KEY_NAME settings is not defined."\
-        +   "Defaulting to `{defaults.STATE_KEY_NAME}`"
+        _msg = (
+            "STATE_KEY_NAME settings is not defined."
+            + "Defaulting to `{defaults.STATE_KEY_NAME}`"
+        )
         warnings.warn(_msg)
     else:
         if not settings.STATE_KEY_NAME:
-            _msg = f"STATE_KEY_NAME setting is set to `{settings.STATE_KEY_NAME}`"\
-            +   "which is logically incorrect."
+            _msg = (
+                f"STATE_KEY_NAME setting is set to `{settings.STATE_KEY_NAME}`"
+                + "which is logically incorrect."
+            )
             info = Info(_msg)
             errors.append(info)
 
     if not hasattr(settings, "FINAL_REDIRECT_KEY_NAME"):
-        setattr(
-            settings, "FINAL_REDIRECT_KEY_NAME", defaults.FINAL_REDIRECT_KEY_NAME
+        setattr(settings, "FINAL_REDIRECT_KEY_NAME", defaults.FINAL_REDIRECT_KEY_NAME)
+        _msg = (
+            "FINAL_REDIRECT_KEY_NAME settings is not defined."
+            + "Defaulting to `{defaults.FINAL_REDIRECT_KEY_NAME}`"
         )
-        _msg = "FINAL_REDIRECT_KEY_NAME settings is not defined."\
-        +   "Defaulting to `{defaults.FINAL_REDIRECT_KEY_NAME}`"
         warnings.warn(_msg)
     else:
         if not settings.FINAL_REDIRECT_KEY_NAME:
-            _msg = "FINAL_REDIRECT_KEY_NAME setting is set to"\
-            +   "`{settings.FINAL_REDIRECT_KEY_NAME}` which is logically incorrect."
+            _msg = (
+                "FINAL_REDIRECT_KEY_NAME setting is set to"
+                + "`{settings.FINAL_REDIRECT_KEY_NAME}` which is logically incorrect."
+            )
             info = Info(_msg)
             errors.append(info)
     return errors

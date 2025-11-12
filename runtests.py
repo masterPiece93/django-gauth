@@ -1,8 +1,10 @@
 # my_reusable_app/runtests.py
 import os
 import sys
+
 import django
 from django.conf import settings
+
 from devPlatform.devPlatform import settings as devPlatformSettings
 
 # Configure minimal settings for testing
@@ -46,6 +48,7 @@ os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1' # :local-development
 django.setup()
 
 from django.test.runner import DiscoverRunner
+
 
 def run_tests():
     test_runner = DiscoverRunner(verbosity=2)

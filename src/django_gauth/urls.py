@@ -1,6 +1,5 @@
 # urls
 
-from django.urls import path    # pylint: disable=E0401
 from django.conf import settings
 from django.urls import path  # pylint: disable=E0401
 
@@ -16,7 +15,7 @@ urlpatterns = [
 ]
 
 if hasattr(settings, "DEBUG") and settings.DEBUG:
-    urlpatterns.append(path('debug', views.debug_information, name="debug"))
+    urlpatterns.append(path("debug", views.debug_information, name="debug"))
 else:
     ...
 # NOTE : `/` at the end of the route will be taken in cosideration while redirected .

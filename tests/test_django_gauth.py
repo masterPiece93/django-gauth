@@ -1,11 +1,12 @@
 import sys
-from importlib import reload, import_module
+from importlib import import_module, reload
+
 import django
-from django.test.client import Client
-from django.test import TestCase, override_settings
-from django.urls import reverse
 from django.conf import settings
-from django.urls import clear_url_caches
+from django.test import TestCase, override_settings
+from django.test.client import Client
+from django.urls import clear_url_caches, reverse
+
 from tests import env
 
 # @pytest.fixture(scope="session")
@@ -103,7 +104,7 @@ class DebugApiTest(TestCase):
             reload(sys.modules[urlconf])
         else:
             import_module(urlconf)
-    
+
     def test_gauth_debug(self):
         self.reload_urlconf()
         self.assertTrue(settings.DEBUG)
