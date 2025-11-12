@@ -1,10 +1,10 @@
 import sys
 from importlib import import_module, reload
 
-from django.conf import settings
-from django.test import TestCase, override_settings
-from django.test.client import Client
-from django.urls import clear_url_caches, reverse
+from django.conf import settings    # pylint: disable=import-error
+from django.test import TestCase, override_settings # pylint: disable=import-error
+from django.test.client import Client   # pylint: disable=import-error
+from django.urls import clear_url_caches, reverse   # pylint: disable=import-error
 
 from tests import env
 

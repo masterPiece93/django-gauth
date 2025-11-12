@@ -7,15 +7,14 @@ import urllib.parse
 from copy import deepcopy
 from typing import Optional
 
-from django.conf import settings
-from django.http import HttpRequest, JsonResponse
-from django.shortcuts import redirect, render
-from django.urls import reverse
-from google.auth.transport import requests
-from google.oauth2 import id_token
-from google_auth_oauthlib.flow import Flow
+from django.conf import settings    # pylint: disable=import-error
+from django.http import HttpRequest, JsonResponse   # pylint: disable=import-error
+from django.shortcuts import redirect, render   # pylint: disable=import-error
+from django.urls import reverse # pylint: disable=import-error
+from google.auth.transport import requests  # pylint: disable=import-error
+from google.oauth2 import id_token  # pylint: disable=import-error
+from google_auth_oauthlib.flow import Flow  # pylint: disable=import-error
 
-import django_gauth.defaults as defaults
 from django_gauth.utilities import check_gauth_authentication, credentials_to_dict
 
 def get_origin_url(request: HttpRequest) -> tuple[Optional[str], bool]:  # type: ignore

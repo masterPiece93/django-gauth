@@ -2,12 +2,12 @@ import os
 import time
 from unittest import skipIf
 
-import undetected_chromedriver as uc
-from django.test import LiveServerTestCase
-from selenium.common.exceptions import TimeoutException
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import WebDriverWait
+import undetected_chromedriver as uc    # pylint: disable=import-error
+from django.test import LiveServerTestCase  # pylint: disable=import-error
+from selenium.common.exceptions import TimeoutException # pylint: disable=import-error
+from selenium.webdriver.common.by import By # pylint: disable=import-error
+from selenium.webdriver.support import expected_conditions as EC    # pylint: disable=import-error
+from selenium.webdriver.support.ui import WebDriverWait # pylint: disable=import-error
 
 from tests import env
 

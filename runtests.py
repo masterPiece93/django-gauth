@@ -2,9 +2,9 @@
 import os
 import sys
 
-import django
-from django.conf import settings
-from django.test.runner import DiscoverRunner
+import django   # pylint: disable=import-error
+from django.conf import settings    # pylint: disable=import-error
+from django.test.runner import DiscoverRunner   # pylint: disable=import-error
 
 # from devPlatform.devPlatform import settings as SettingsHub
 # SettingsHub.ROOT_URLCONF = 'devPlatform.devPlatform.urls'
