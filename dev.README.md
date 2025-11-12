@@ -308,6 +308,18 @@ running mkdocs :
 mkdocs serve
 ```
 
+setup for mkdocs :
+
+- create a virtualenv & activate it
+- Install the following :
+    ```sh
+    pip install mkdocs mkdocs-material
+    ```
+- now run mkdocs
+    ```sh
+    mkdocs serve
+    ```
+
 ## Linting , Formatting and Typing
 
 - via `pdm`
