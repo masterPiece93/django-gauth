@@ -33,7 +33,7 @@ class IndexViewTest(TestCase):
     """
     TestSuite for Landing Page
     """
-    def setUp(self):
+    def setUp(self): # pylint: disable=invalid-name
         self.client = Client()
 
     def test_index(self):
@@ -47,7 +47,7 @@ class LoginViewTest(TestCase):
     """
     TestSuite for Login Endpoint
     """
-    def setUp(self):
+    def setUp(self): # pylint: disable=invalid-name
         self.client = Client()
 
     def test_login(self):
@@ -62,7 +62,7 @@ class DebugApiTest(TestCase):
     """
     TestSuite for Debug Endpoint
     """
-    def setUp(self):
+    def setUp(self): # pylint: disable=invalid-name
         self.client = Client()
 
     def reload_urlconf(self, urlconf=None):
