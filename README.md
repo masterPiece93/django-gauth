@@ -89,6 +89,8 @@ pip install -i https://test.pypi.org/simple/ django-gauth
 
 ### Important Points <sup> <small>To Be Noted</small> </sup>
 
+#1.
+
 for production applications , that are working on http**s** , must ensure the following settings for django to be http**s** aware :
 ```sh
 USE_X_FORWARDED_HOST = True
@@ -119,3 +121,32 @@ server {
     }
 }
 ```
+
+#2.
+
+`django_gauth` app package serves a landing page for authentication , which will be served from within your application server when you include `django_gauth` in your project and use . Hence you have to take care of the static content rendring in your django project when you are deploying it on server .
+
+- although no extra javascript or html file is included as static content , but there are two logo images that are displayed on navbar of landing page 
+    1. Organisation logo on the left
+    2. placeholder image in case of no profile picture
+    
+    For these two , your project must manage the static content stratagy on production environments
+
+    The steps for managing static content in a django project
+        - Refer the [documentation](https://docs.djangoproject.com/en/5.2/howto/static-files/) for collecting the static files to a central folder
+        - Then you'll have to mount the folder path for static files folder `staticfiles` to a volume location in your docker container
+        - Then you'll have to whitelist this path on `/static/` route publicly on either your ingress file or nginx.conf file if you are using Nginx .
+
+    Although , if you don't want the defaut logo ( which is very likely ) and placeholder image or you don't want to do the above mentioned arrangement for staticfile in your project, you can also configure them to your own via your settings . There is a settings  variable which is set in following fashion :
+
+    **Setting own static content**
+    ```python
+    DJANGO_GAUTH_UI_CONFIG={
+        "index":{
+            "navbar":{
+                "logo":"<hosted-url-for-your-organisation-logo>",
+                "profile_picture_absence":"<hosted-url-for-the-placeholder-image>"
+            }
+        }
+    }
+    ```
