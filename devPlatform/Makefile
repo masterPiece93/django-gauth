@@ -6,7 +6,11 @@ PYTHON := $(VENV_DIR)/bin/python
 PIP := $(VENV_DIR)/bin/pip
 REQUIREMENTS_FILE := requirements/requirements.txt
 
-all: runserver
+all: migrate runserver
+
+migrate:
+	@echo "\n| Applying Migrations..."
+	$(PYTHON) manage.py migrate
 
 # Target to run the Django development server
 runserver: $(VENV_DIR)

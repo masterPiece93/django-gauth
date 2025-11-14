@@ -208,12 +208,99 @@ Using Make :
     cd devPlatform/
     ```
 
-- ```sh
+- first time use
+    ```sh
+    make all
+    ```
+
+- consecutive use
+    ```sh
     make runserver
     ```
 
-## Documentation
+## Testing
 
+all tests reside in `tests/` folder at root level
+
+**Django Test Runner**
+
+You can run tests quickly with django test runner in an isolated environment .
+
+- create test virtualenvironment
+    ```sh
+    python3 -m venv test-venv
+    ```
+    ```sh
+    activate test-venv/bin/activate
+    ```
+- install test requirements 
+    ```sh
+    pip install -r tests/requirements.txt
+    ```
+- run tests
+    ```sh
+    python3 runtests.py
+    ```
+
+There are certain automation tests also , residing in same `tests` directory .
+They are switched-off by default .
+If you want to run them , then you can **turn on** the automation tests , setting `AUTOMATION='1'`
+If you only wish to run only the unit tests , then you can **turn off** the automation tests , setting `AUTOMATION='0'` or simply unsetting the `AUTOMATION` env variable.
+
+- setting
+    ```
+    # linux
+    export AUTOMATION="0"
+    ```
+- un-setting
+    ```
+    # linux
+    unset AUTOMATION
+    ```
+
+During the test runs , the Django TestRunner is set up .
+It creates a mock django project , to run your reusable app in & hence run your tests .
+
+The settings are setup partly using the devPlatform and partly setting manully .
+    - find these in `runtests.py` file
+
+Test Environment:
+
+- Certain settings are loaded from `.env` file .
+- you can specify your own test environment . Use `ENV_PATH` variable .
+    - export it in your teminal/cmd , and give it a absolute path to a `.env` file .
+- you must use the `tests/.env.template` file and create a new `.env.test` file from it and populate desired values .
+
+
+**Nox**
+
+we have configured not to run tests with different `django` and `python-versions` .
+
+Also we have option on tool for running tests
+- via `Django Test Runner`
+- via `django-pytest`
+
+for running tests via `Django Test Runner` , we have nox session : `test_django_versions__runner`
+- run command
+    ```sh
+    ./nox.sh -s test_django_versions__runner
+    ```
+
+for running tests via `django-pytest` , we have nox session : `test_django_versions__pytest`
+- run command
+    ```sh
+    ./nox.sh -s test_django_versions__pytest
+    ```
+
+> pytest is configured to use django project settigs form `tests/test_settings.py` ( indirectly from devPlatform/devPlatform/settings.py )
+
+> django runner is configured to use django project settigs form `tests/test_settings.py` ( indirectly from devPlatform/devPlatform/settings.py )
+
+NOTE
+* `tests/test_settings.py` inherits all the settings from `indirectly from devPlatform/devPlatform/settings.py` , and overrides the ones that are required for testing purpose .
+
+
+## Documentation
 
 running mkdocs :
 
@@ -221,9 +308,82 @@ running mkdocs :
 mkdocs serve
 ```
 
+setup for mkdocs :
+
+- create a virtualenv & activate it
+- Install the following :
+    ```sh
+    pip install mkdocs mkdocs-material
+    ```
+- now run mkdocs
+    ```sh
+    mkdocs serve
+    ```
+
+## Linting , Formatting and Typing
+
+- via `pdm`
+    - regular lint 
+        ```sh
+        pdm@djangoGauth lint
+        ```
+    - pylint
+        ```sh
+        pdm@djangoGauth pylint
+        ```
+    - mypy
+        ```sh
+        pdm@djangoGauth mypy
+        ```
+    > refer `pyproject.toml` for more availavle commands in [tool.pdm.scripts] section
+
+- custom
+
+    - setup a seperate venv for this purpose
+    - activate
+    - run pylint 
+        ```sh
+        pylint $(git ls-files '*.py') --disable=C0114,C0116 --fail-under=9.0
+        ```
+        > This one is used in `pylint` GitHub Action
+
 ## Important Points
 
 * always use pypi's [official classifier's](https://pypi.org/classifiers/) list to find classifiers for your python pacakge .
     - NOTE : invalid classifiers will raise errors at the time of publishing package to pypi
 
 * use [validate-pyproject](https://pypi.org/project/validate-pyproject/) python utility for validating your `pyproject.toml` files during development , before publishing to pypi . 
+
+* pdm dependency multi range adjusted addition
+```sh
+pdm add "package_name; environment_marker"
+```
+```sh
+pdm add "some-package; python_version >= '3.8' and python_version < '3.12'" "another-package; python_version >= '3.9' or python_version < '3.7'"
+```
+```sh
+pdm add "my-library==1.0.0; python_version < '3.9'" "my-library==2.0.0; python_version >= '3.9'"
+```
+For Example :
+    * ```sh
+    pdm@djangoGauth add "Django>=3.1; python_version>='3.9' and python_version<'3.11'" "Django>=4.2; python_version>='3.9'"
+    ```
+    * ```sh
+    pdm add "colorama; sys_platform == 'win32' and python_version < '3.9'"
+    ```
+
+* allow nox to use pyenv installed python versions
+
+```sh
+pyenv global 3.8.12 3.9.5 3.10.2
+```
+
+* Django Compatibility Chart
+```
+Django 6.0 (under development): Supports Python 3.12, 3.13, and 3.14.
+Django 5.2.x series: The last series to support Python 3.10 and 3.11.
+Django 5.1: Supports Python 3.10, 3.11, 3.12, and 3.13.
+Django 5.0: Compatible with Python versions 3.10, 3.11, and 3.12.
+Django 4.2: Supports Python 3.8, 3.9, 3.10, 3.11, and 3.12 (as of 4.2.8). This is an LTS (Long Term Support) release. 
+Django 4.0: Supports Python 3.8, 3.9, and 3.10.
+```

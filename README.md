@@ -74,7 +74,14 @@ pip install -i https://test.pypi.org/simple/ django-gauth
 
     ]
     ```
-> NOTE : useually all servers ( wsgi, asgi, uWsgi) runs default on `http://127.0.0.1:PORT/` , hence always take care to set the redirect endpoints in your google oauth2 client app in accordance with 127.0.0.1 , don't mistake to consider localhost , 0.0.0.0 and 127.0.0.1 as same while dealing with redirect uri's . For example : suppose you have set `http://localhost:PORT/gauth/google-callback` as your redirect uri , then take note of running your django app on localhost only !!
+
+4. now run your project server
+    - once your server is up & running , navigate to `.../gauth`, this is the master interface ( default landing page )
+    - click on `Authenticate` button to launch Google Oauth2 Login .
+    - just follow the flow you are directed to .
+    - post authentication , you'll be redirected back to `.../gauth`
+
+> NOTE : usually all servers ( wsgi, asgi, uWsgi) runs default on `http://127.0.0.1:PORT/` , hence always take care to set the redirect endpoints in your google oauth2 client app in accordance with 127.0.0.1 , don't mistake to consider localhost , 0.0.0.0 and 127.0.0.1 as same while dealing with redirect uri's . For example : suppose you have set `http://localhost:PORT/gauth/google-callback` as your redirect uri , then take note of running your django app on localhost only !!
 
 > NOTE : 
 ---
