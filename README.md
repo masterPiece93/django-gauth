@@ -11,6 +11,8 @@
 ## Developer Zone
 
 > [Developer README](./dev.README.md)
+>
+> - New here? See [why `pdm.lock` exists](./dev.README.md#why-pdmlock-exists-in-this-project).
 
 ## Installation
 
