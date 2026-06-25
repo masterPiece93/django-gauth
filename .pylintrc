@@ -1,0 +1,5 @@
+[FORMAT]
+max-line-length=120
+
+[MESSAGES CONTROL]
+disable=consider-using-from-import, redefined-outer-name, broad-exception-caught, import-outside-toplevel

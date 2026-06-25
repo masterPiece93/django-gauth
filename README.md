@@ -1,6 +1,9 @@
 # Google Auth <sup>[ Django ]<sup>
 
-![Static Badge](https://img.shields.io/badge/latest-0.1.0-blue)  [![pages-build-deployment](https://github.com/masterPiece93/django-gauth/actions/workflows/pages/pages-build-deployment/badge.svg)](https://github.com/masterPiece93/django-gauth/actions/workflows/pages/pages-build-deployment)  [![Pylint](https://github.com/masterPiece93/django-gauth/actions/workflows/pylint.yml/badge.svg)](https://github.com/masterPiece93/django-gauth/actions/workflows/pylint.yml)
+![Dynamic TOML Badge](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FmasterPiece93%2Fdjango-gauth%2F6f550a6585b8f57d38e2182ae67cc89edeee296d%2Fpyproject.toml&query=%24.project.version&label=latest%20version&labelColor=black)
+ [![PyPI - Version](https://img.shields.io/pypi/v/django-gauth)](https://pypi.org/project/django-gauth) ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/django-gauth) ![PyPI - Versions from Framework Classifiers](https://img.shields.io/pypi/frameworkversions/django/django-gauth) ![PyPI - Status](https://img.shields.io/pypi/status/django-gauth) ![PyPI - License](https://img.shields.io/pypi/l/django-gauth)
+  [![pages-build-deployment](https://github.com/masterPiece93/django-gauth/actions/workflows/pages/pages-build-deployment/badge.svg)](https://github.com/masterPiece93/django-gauth/actions/workflows/pages/pages-build-deployment)  [![Pylint](https://github.com/masterPiece93/django-gauth/actions/workflows/pylint.yml/badge.svg)](https://github.com/masterPiece93/django-gauth/actions/workflows/pylint.yml) [![Upload Python Package](https://github.com/masterPiece93/django-gauth/actions/workflows/release.yml/badge.svg)](https://github.com/masterPiece93/django-gauth/actions/workflows/release.yml) ![PyPI - Types](https://img.shields.io/pypi/types/django-gauth?color=pink)
+
 
 
 * [Official Documentation](https://masterpiece93.github.io/django-gauth/)
@@ -25,7 +28,14 @@ pip install git+https://github.com/xavient/django-gauth.git
 ```
 
 from PyPi
-- Not Available Yet
+```sh
+pip install django-gauth
+```
+
+from test PyPi
+```sh
+pip install -i https://test.pypi.org/simple/ django-gauth
+```
 
 ## Quickstart
 
@@ -64,13 +74,22 @@ from PyPi
 
     ]
     ```
-> NOTE : useually all servers ( wsgi, asgi, uWsgi) runs default on `http://127.0.0.1:PORT/` , hence always take care to set the redirect endpoints in your google oauth2 client app in accordance with 127.0.0.1 , don't mistake to consider localhost , 0.0.0.0 and 127.0.0.1 as same while dealing with redirect uri's . For example : suppose you have set `http://localhost:PORT/gauth/google-callback` as your redirect uri , then take note of running your django app on localhost only !!
+
+4. now run your project server
+    - once your server is up & running , navigate to `.../gauth`, this is the master interface ( default landing page )
+    - click on `Authenticate` button to launch Google Oauth2 Login .
+    - just follow the flow you are directed to .
+    - post authentication , you'll be redirected back to `.../gauth`
+
+> NOTE : usually all servers ( wsgi, asgi, uWsgi) runs default on `http://127.0.0.1:PORT/` , hence always take care to set the redirect endpoints in your google oauth2 client app in accordance with 127.0.0.1 , don't mistake to consider localhost , 0.0.0.0 and 127.0.0.1 as same while dealing with redirect uri's . For example : suppose you have set `http://localhost:PORT/gauth/google-callback` as your redirect uri , then take note of running your django app on localhost only !!
 
 > NOTE : 
 ---
 <br>
 
 ### Important Points <sup> <small>To Be Noted</small> </sup>
+
+#1.
 
 for production applications , that are working on http**s** , must ensure the following settings for django to be http**s** aware :
 ```sh
@@ -102,3 +121,32 @@ server {
     }
 }
 ```
+
+#2.
+
+`django_gauth` app package serves a landing page for authentication , which will be served from within your application server when you include `django_gauth` in your project and use . Hence you have to take care of the static content rendring in your django project when you are deploying it on server .
+
+- although no extra javascript or html file is included as static content , but there are two logo images that are displayed on navbar of landing page 
+    1. Organisation logo on the left
+    2. placeholder image in case of no profile picture
+    
+    For these two , your project must manage the static content stratagy on production environments
+
+    The steps for managing static content in a django project
+        - Refer the [documentation](https://docs.djangoproject.com/en/5.2/howto/static-files/) for collecting the static files to a central folder
+        - Then you'll have to mount the folder path for static files folder `staticfiles` to a volume location in your docker container
+        - Then you'll have to whitelist this path on `/static/` route publicly on either your ingress file or nginx.conf file if you are using Nginx .
+
+    Although , if you don't want the defaut logo ( which is very likely ) and placeholder image or you don't want to do the above mentioned arrangement for staticfile in your project, you can also configure them to your own via your settings . There is a settings  variable which is set in following fashion :
+
+    **Setting own static content**
+    ```python
+    DJANGO_GAUTH_UI_CONFIG={
+        "index":{
+            "navbar":{
+                "logo":"<hosted-url-for-your-organisation-logo>",
+                "profile_picture_absence":"<hosted-url-for-the-placeholder-image>"
+            }
+        }
+    }
+    ```

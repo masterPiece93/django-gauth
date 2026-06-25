@@ -3,6 +3,7 @@ Gauth Application
 =================
 Author : Ankit Kumar ( ankit.kumar05@telusdigital.com ) 
 -->
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -20,12 +21,14 @@ Author : Ankit Kumar ( ankit.kumar05@telusdigital.com )
         /* navbar css */
         .navbar {
             margin: 0;
-            background-color: #4b286d !important;
-            color: white;
+            background-color: {{ context_data.index.navbar.style.background_color | default:context_data.default_index_navbar_background }} !important;
+            color: {{ context_data.index.navbar.style.text_color | default:context_data.default_index_navbar_text_color }} !important;
+            border: {{ context_data.index.navbar.style.border | default:"none" }};
             padding: 1em;
             text-align: center;
             display: flex;
             align-items: anchor-center;
+            flex-wrap: wrap;
         }
         /* --- */
 
@@ -47,39 +50,74 @@ Author : Ankit Kumar ( ankit.kumar05@telusdigital.com )
             flex-direction: column;
             border: 1%;
             border-radius: 1em;
-            padding: 0.5em;
+            padding: 0.5em 1.2em;
         }
         /* --- */
     </style>
 </head>
 <body>
-    
     <div class="navbar">
-        <div style="flex: 1;">
+        <!-- <div style="flex: 1;">
             <span style="font-family: monospace;
             font-weight: bold;
             font-size: large;
             letter-spacing: 3px;
             ">TELUS</span>
             <span>Digital</span>
+        </div> -->
+        <div style="flex: 1; background-color: {{ context_data.index.navbar.style.logo_background | default:context_data.default_index_navbar_logo_background}};">
+            <span>
+                {% if context_data.index.navbar.logo %}
+                    <img alt="LOGO" src="{{ context_data.index.navbar.logo }}" class=" c-pointer" style="width: 206px; height: 40px; margin-right: 1.25rem;">
+                {% else %}
+                    <img alt="LOGO" src="{% static 'django_gauth/office_logo.png' %}" class=" c-pointer" style="width: 206px; height: 40px; margin-right: 1.25rem;">
+                {% endif %}
+            </span>
         </div>
         <div style="flex: 6;">
             <h1>Google Auth</h1>
         </div>
 
         <div style="flex: 1;" style="cursor: pointer;">
-            <img id="userPicture" src="{{ context_data.user_info.picture }}" alt="..." 
-                style="
-                    border: 1.5px solid white;
-                    border-radius: 50%;
-                "
-            >
-            <div id="userInfo" class="hoverInfoBox">
-                <b style="color: rebeccapurple;">{{ context_data.user_info.name }}</b>
-                <b style="color: rebeccapurple;">{{ context_data.user_info.email }}</b>
-                {% if context_data.user_info.email_verified %}
-                    <i class="material-icons" style="color: green;">check_circle</i>
+            {% if context_data.user_info.picture %}
+                <img id="userPicture" src="{{ context_data.user_info.picture }}" alt="" 
+                    style="
+                        width: 40%;
+                        height: 40%;
+                        border: 1.5px solid white;
+                        border-radius: 50%;
+                    "
+                >
+            {% else %}
+                {% if context_data.index.navbar.profile_picture_absence %}
+                    <img id="userPicture" src="{{ context_data.index.navbar.profile_picture_absence }}" alt="..." 
+                    style="
+                        width: 40%;
+                        height: 40%;
+                        border: 1.5px solid white;
+                        border-radius: 50%;
+                    "
+                    >
+                {% else %}
+                    <img id="userPicture" src="{% static 'django_gauth/user.png' %}" alt="..." 
+                    style="
+                        width: 40%;
+                        height: 40%;
+                        border: 1.5px solid white;
+                        border-radius: 50%;
+                    "
+                    >
                 {% endif %}
+            {% endif %}
+            <div id="userInfo" class="hoverInfoBox" style="right: 0.5% !important; font-size: larger;">
+                <b style="color: rebeccapurple;">{{ context_data.user_info.name }}</b>
+                <div style="display: flex; align-items: center;">
+                    <b style="color: rebeccapurple;">{{ context_data.user_info.email }}</b>
+                    {% if context_data.user_info.email_verified %}
+                        <i class="material-icons" style="color: green;">check_circle</i>
+                    {% endif %}
+                </div>
+
             </div>
         </div>
     </div>
@@ -91,7 +129,7 @@ Author : Ankit Kumar ( ankit.kumar05@telusdigital.com )
         ">
         <div>
             <span style="
-            color: #4b286d !important;
+            color: {{ context_data.index.status_bar.session_timer.style.color | default:'#4b286d' }} !important;
             font-weight: bold;
             "
             >Session Expiring In :</span>
@@ -99,21 +137,56 @@ Author : Ankit Kumar ( ankit.kumar05@telusdigital.com )
         </div>
         <div style="width: 13.5%;">
         <button id="AuthenticateButton" style="
+        background-color: {{ context_data.index.status_bar.authenticate_button.style.background_color | default:'white' }};
         width: 100%;
         height: 100%;
         display: none;
         ">
             <a href="{{context_data.login_href}}" style="
-                color: #4b286d !important;
+                color: {{ context_data.index.status_bar.authenticate_button.style.text_color | default:'#4b286d' }} !important;
                 font-family: monospace;
                 font-weight: bold;
+                overflow-wrap: break-word;
+                text-decoration: none;
             ">
             Authenticate
             </a>
         </button>
         </div>
     </div>
-    
+    <section style="background-color: rgb(252 253 251 / var(--tw-bg-opacity, 1));">
+        <div style="display: flex;">
+            <div style="display: flex; align-items: center;">
+                <h1 style="padding-left: 1em;
+                text-wrap: pretty;
+                line-height: 115%;
+                letter-spacing: 0;
+                font-weight: 300;
+                font-size: 56px;
+                text-align: center;
+                cursor: pointer;
+                "
+                title="Please Continue Where You Left">
+
+                    {% if context_data.is_authenticated %}
+                        You have Successfully Logged-In
+                    {% else %}  
+                        Please Authenticate
+                    {% endif %}
+                </h1>
+            </div>
+            <!-- <div>
+                <video class="h-full w-full md:object-[40%_0%] lg:object-[60%_0%] xl:object-[40%_0%] object-cover lg:object-contain md:translate-x-[36%] lg:translate-x-[25%] scale-125 sm:scale-100"
+                    playsinline muted loop autoplay
+                >
+                    <source src="https://videos.ctfassets.net/3viuren4us1n/39ia3lFJMbT8uGcGYphGb1/24cabf7a91da81bf7b44f4367f8357b4/homepage-hero.mp4"
+                        type="video/mp4"
+                    >
+                </video>
+            </div> -->
+        </div>
+
+    </section>
     <script>
         /*
             Utilities
@@ -126,7 +199,7 @@ Author : Ankit Kumar ( ankit.kumar05@telusdigital.com )
 
             // Add event listener for mouseover (when mouse enters the area)
             hoverArea.addEventListener('mouseover', () => {
-                infoBox.style.display = 'block'; // Or 'visibility = "visible"'
+                infoBox.style.display = 'flex'; // Or 'visibility = "visible"'
             });
 
             // Add event listener for mouseout (when mouse leaves the area)
@@ -137,7 +210,15 @@ Author : Ankit Kumar ( ankit.kumar05@telusdigital.com )
             // initially set to None
             infoBox.style.display = 'none'
         }
-        
+        function saveToLocalStorage(key, data) {
+                localStorage.setItem(key, data);
+                console.log("set : ",key, data)
+            }
+
+        function loadFromLocalStorage(key) {
+            const data = localStorage.getItem(key);
+            console.log("get : ", key, data)
+        }
     </script>
     <script>
 
@@ -145,7 +226,13 @@ Author : Ankit Kumar ( ankit.kumar05@telusdigital.com )
         
         let isAuthenticated = "{{context_data.is_authenticated }}"
         if (isAuthenticated === "True") {
-            document.getElementById("AuthenticateButton").style.display = "inline-block"
+            // don't show the button
+            document.getElementById("AuthenticateButton").style.display = "none";
+            saveToLocalStorage('_ga', true)
+        } else {
+            // show the button
+            document.getElementById("AuthenticateButton").style.display = "inline-block";
+            saveToLocalStorage('_ga', false)
         }
         /* --- */
 
@@ -162,6 +249,8 @@ Author : Ankit Kumar ( ankit.kumar05@telusdigital.com )
                 document.getElementById("AuthenticateButton").style.display = "inline-block"
                 clearInterval(timerInterval);
                 return;
+            } else {
+                document.getElementById("AuthenticateButton").style.display = "none";
             }
 
             const days = Math.floor(remainingSeconds / (60 * 60 * 24));

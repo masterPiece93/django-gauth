@@ -4,20 +4,21 @@ Welcome to Django GAuth Library Documentation
 
 ## Installation
 
-=== "GitHub [ Editable Installation ]"
-    ```bash
-    # (Preferred for Development)
-    pip install -e git+https://github.com/xavient/django-gauth.git#egg=django_gauth
-    ```
-=== "GitHub [ Main Branch ]"
-    ```bash
-    # (Latest Version)
-    pip install git+https://github.com/xavient/django-gauth.git
-    ```
 === "PyPi"
     ```bash
-    # Not Available Yet !! will be soon
+    pip install django-gauth
     ```
+=== "GitHub [ Editable Installation ]"
+    ```bash
+    # (Preferred for testing out niche experimental features )
+    pip install -e git+https://github.com/masterPiece93/django-gauth.git#egg=django_gauth
+    ```
+=== "GitHub [ Specific Tag ]"
+    ```bash
+    # (Specific Tag Version)
+    pip install git+https://github.com/masterPiece93/django-gauth.git@v0.1.2#egg=django_gauth
+    ```
+
 
 ## Project layout
 

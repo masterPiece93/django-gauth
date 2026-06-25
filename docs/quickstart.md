@@ -67,6 +67,13 @@
         ```
     - > we have shown port 8000 in use, you can replace any port number of your choice in place of 8000 . ( e.g : 5000, 8080 etc ... )
 
+Quick Use :
+
+- once your server is up & running , navigate to `.../gauth`, this is the master interface ( default landing page )
+- click on `Authenticate` button to launch Google Oauth2 Login .
+- just follow the flow you are directed to .
+- post authentication , you'll be redirected back to `.../gauth`
+
 ## Important Points
 
 - useually all servers ( wsgi, asgi, uWsgi) runs default on `http://127.0.0.1:PORT/` , hence always take care to set the redirect endpoints in your google oauth2 client app in accordance with 127.0.0.1 , don't mistake to consider - _localhost_ , _0.0.0.0_ and _127.0.0.1_ as same while dealing with redirect uri's . 
