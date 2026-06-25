@@ -74,6 +74,24 @@ pdm@djangoGauth install -G <option>
 pdm@djangoGauth sync
 ```
 
+### Why `pdm.lock` exists in this project
+
+- `pdm.lock` is for **project maintainers/contributors** to get reproducible local environments.
+- It is useful for development workflows like `pdm@djangoGauth sync` and grouped installs.
+- It is **not** what controls dependency resolution for end users installing from PyPI.
+
+For users doing:
+
+```sh
+pip install django_gauth
+```
+
+dependency resolution comes from `pyproject.toml` (`[project].dependencies`) and Python version markers,
+not from this repository's `pdm.lock`.
+
+So keeping `pdm.lock` is helpful for consistent development, while end users can still install
+compatible versions based on their Python/Django environment.
+
 ```sh
 # list all installed packages
 pdm@djangoGauth list
