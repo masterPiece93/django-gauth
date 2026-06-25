@@ -1,27 +1,86 @@
 site_name: Django Gauth
-site_url: https://masterPiece93/django-gauth
+site_url: https://masterpiece93.github.io/django-gauth/
+site_description: "A Django app for Google OAuth2 authentication — simple, secure, production-ready."
+site_author: Ankit Yadav
+repo_url: https://github.com/masterPiece93/django-gauth
+repo_name: masterPiece93/django-gauth
+edit_uri: edit/main/docs/
+
 theme:
   name: material
   logo: assets/logo.png
   favicon: assets/favicon/favicon.ico
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.footer
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - toc.follow
+    - announce.dismiss
   palette:
     # Dark Mode
     - scheme: slate
       toggle:
         icon: material/weather-sunny
-        name: Dark mode
-      primary: green
-      accent: deep purple
-
+        name: Switch to light mode
+      primary: deep purple
+      accent: amber
     # Light Mode
     - scheme: default
       toggle:
         icon: material/weather-night
-        name: Light mode
-      primary: blue
+        name: Switch to dark mode
+      primary: indigo
       accent: deep orange
+  icon:
+    repo: fontawesome/brands/github
+    admonition:
+      note: octicons/tag-16
+      abstract: octicons/checklist-16
+      info: octicons/info-16
+      tip: octicons/squirrel-16
+      success: octicons/check-16
+      question: octicons/question-16
+      warning: octicons/alert-16
+      failure: octicons/x-circle-16
+      danger: octicons/zap-16
+      bug: octicons/bug-16
+      example: octicons/beaker-16
+      quote: octicons/quote-16
+
+plugins:
+  - search
+  - tags
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/masterPiece93/django-gauth
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/django-gauth/
+  version:
+    provider: mike
+
+copyright: Copyright &copy; 2024-2026 Ankit Yadav
+
 markdown_extensions:
   - attr_list
+  - md_in_html
+  - tables
+  - footnotes
+  - def_list
+  - abbr
+  - admonition
+  - pymdownx.details
   - pymdownx.emoji:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
@@ -39,3 +98,36 @@ markdown_extensions:
   - pymdownx.tabbed:
       alternate_style: true
       combine_header_slug: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.mark
+  - pymdownx.keys
+  - pymdownx.critic
+  - pymdownx.caret
+  - pymdownx.tilde
+  - toc:
+      permalink: true
+      toc_depth: 3
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: installation.md
+      - Quickstart: quickstart.md
+      - Google Cloud Setup: google-cloud-setup.md
+  - Concepts:
+      - How OAuth2 Works: concepts/oauth2-explained.md
+      - Architecture: concepts/architecture.md
+  - Configuration:
+      - Settings Reference: configuration/settings.md
+      - URL Configuration: configuration/urls.md
+      - UI Customization: configuration/ui-customization.md
+  - Guides:
+      - Production Deployment: guides/production.md
+      - Troubleshooting: guides/troubleshooting.md
+  - API Reference:
+      - Views: api/views.md
+      - Utilities: api/utilities.md
+      - System Checks: api/checks.md
+  - Flows: flows.md
+  - Changelog: changelog.md

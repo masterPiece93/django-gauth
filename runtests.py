@@ -39,7 +39,6 @@ settings.configure(
 )
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1' # :local-development
 
-django.setup()
 
 def run_tests():
     test_runner = DiscoverRunner(verbosity=2)
@@ -52,9 +51,10 @@ if __name__ == '__main__':
     # Export ENV if ENV_PATH is not set
     from coverage import Coverage
 
-    # Initialize Coverage
+    # Initialize Coverage BEFORE django.setup() to capture module-level code
     cov = Coverage(source=['src'], omit=['*migrations*', '*tests*']) # Customize source and omit
     cov.start()
+    django.setup()
     failures=run_tests()
     # Stop Coverage and generate report
     cov.stop()
@@ -63,3 +63,5 @@ if __name__ == '__main__':
     cov.html_report(directory='htmlcov')
 
     sys.exit(bool(failures))
+else:
+    django.setup()

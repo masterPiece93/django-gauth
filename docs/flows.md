@@ -1,31 +1,201 @@
-### High Level Browser Flow
+---
+title: Authentication Flows
+description: Visual diagrams of all authentication flows in Django Gauth.
+tags:
+  - flows
+  - diagrams
+---
+
+# Authentication Flows :material-transit-connection-variant:
+
+This page provides detailed visual representations of every flow in Django Gauth.
+
+---
+
+## High-Level Browser Flow
+
+What the **user** experiences:
 
 ```mermaid
 graph LR
-    A["/gauth/"] --> B[Landing Screen];
-    B --> |Authenticate| C[Google Account Selection Screen];
-    C --> D{alread signed in ?};
-    D --> |Yes| BA[/SignedIn/];
-    BA --> B;
-    D --> |No| F[Google Consent Screen];
-    F --> G{Consented?};
-    G --> |Yes| BB[/SignedIn/];
-    BB --> B;
-    G --> |No| BC[/no/]
-    
+    A["/gauth/"] --> B[Landing Screen]
+    B --> |"Click Authenticate"| C[Google Account Selection]
+    C --> D{Already signed in?}
+    D --> |Yes| E[Google Consent Screen]
+    D --> |No| F[Enter Google Password]
+    F --> E
+    E --> G{User consents?}
+    G --> |Yes| H[✅ Authenticated!]
+    H --> B
+    G --> |No| I[❌ Access Denied]
+
+    style H fill:#4CAF50,color:white
+    style I fill:#f44336,color:white
 ```
 
-### HTTP Sequence Flow
+---
+
+## Complete HTTP Sequence Flow
+
+What happens at the **network level**:
 
 ```mermaid
 sequenceDiagram
-  autonumber
-  Server->>Terminal: Send request
-  loop Health
-      Terminal->>Terminal: Check for health
-  end
-  Note right of Terminal: System online
-  Terminal-->>Server: Everything is OK
-  Terminal->>Database: Request customer data
-  Database-->>Terminal: Customer data
+    autonumber
+    participant B as 🌐 Browser
+    participant D as 🖥️ Django Server
+    participant G as 🔐 Google OAuth2
+    participant API as 📦 Google Token API
+
+    B->>D: GET /gauth/
+    D-->>B: 200 HTML (Landing Page)
+
+    Note over B,G: User clicks "Authenticate"
+
+    B->>D: GET /gauth/login/
+    D->>D: Create Flow object
+    D->>D: Generate state, store in session
+    D-->>B: 302 → accounts.google.com/o/oauth2/v2/auth
+
+    B->>G: GET /o/oauth2/v2/auth?client_id=...&state=...
+    G-->>B: 200 Account Picker / Consent
+
+    Note over B,G: User selects account & consents
+
+    G-->>B: 302 → /gauth/login-callback?code=AUTH_CODE&state=STATE
+
+    B->>D: GET /gauth/login-callback?code=...&state=...
+    D->>D: Verify state from session
+    D->>API: POST /token {code, client_id, client_secret}
+    API-->>D: {access_token, id_token, refresh_token}
+    D->>D: Verify id_token (signature + claims)
+    D->>D: Store credentials & user info in session
+    D-->>B: 302 → Final Redirect URL
+
+    B->>D: GET /gauth/ (or custom URL)
+    D-->>B: 200 HTML (Authenticated view)
+```
+
+---
+
+## Login with Origin URL Flow
+
+When your app passes `origin_url` for post-auth redirection:
+
+```mermaid
+sequenceDiagram
+    participant App as 🖥️ Your App Page
+    participant D as Django Gauth
+    participant G as Google
+
+    App->>D: GET /gauth/login/?origin_url=http://yourapp/dashboard/
+    D->>D: Validate origin_url (same-origin check)
+
+    alt origin_url is valid (same origin)
+        D->>D: Store origin_url as final redirect
+    else origin_url is invalid (cross-origin)
+        D->>D: Use default GOOGLE_AUTH_FINAL_REDIRECT_URL
+    end
+
+    D-->>G: Redirect to Google
+    G-->>D: Callback with tokens
+    D-->>App: Redirect to stored final URL
+```
+
+---
+
+## Session State Transitions
+
+How the Django session evolves throughout the flow:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Empty: New session
+
+    Empty --> HasState: GET /gauth/login/
+    note right of HasState
+        session = {
+            oauth_state: "abc123",
+            final_redirect: "/dashboard/"
+        }
+    end note
+
+    HasState --> Authenticated: GET /gauth/login-callback
+    note right of Authenticated
+        session = {
+            oauth_state: "abc123",
+            final_redirect: "/dashboard/",
+            credentials: {token, refresh_token, ...},
+            id_info: {email, name, picture, exp}
+        }
+    end note
+
+    Authenticated --> Expired: id_info.exp passes
+    Expired --> HasState: Re-authenticate
+```
+
+---
+
+## Token Lifecycle
+
+```mermaid
+gantt
+    title Token Lifetimes
+    dateFormat X
+    axisFormat %s
+
+    section Authorization Code
+    Code valid           :0, 600
+
+    section Access Token
+    Token valid          :0, 3600
+
+    section Refresh Token
+    Refresh valid        :0, 31536000
+
+    section ID Token
+    ID Token valid       :0, 3600
+```
+
+| Token | Typical Lifetime | Can be refreshed? |
+|-------|:----------------:|:-----------------:|
+| Authorization Code | ~10 min | No (one-time use) |
+| Access Token | ~1 hour | Yes (with refresh token) |
+| Refresh Token | ~1 year | No (new one issued) |
+| ID Token | ~1 hour | Yes (with refresh token) |
+
+---
+
+## Error Flows
+
+### Redirect URI Mismatch
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant D as Django
+    participant G as Google
+
+    B->>D: GET /gauth/login/
+    D-->>B: 302 → Google (redirect_uri=http://127.0.0.1:8000/gauth/login-callback)
+    B->>G: GET /auth?redirect_uri=http://127.0.0.1:8000/gauth/login-callback
+    G-->>B: ❌ Error 400: redirect_uri_mismatch
+
+    Note over B,G: Google's registered URI doesn't match!
+```
+
+### User Denies Consent
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant D as Django
+    participant G as Google
+
+    B->>D: GET /gauth/login/
+    D-->>B: 302 → Google
+    B->>G: User clicks "Deny"
+    G-->>B: 302 → /gauth/login-callback?error=access_denied
+    B->>D: GET /gauth/login-callback?error=access_denied
+    D-->>B: Error handling
 ```

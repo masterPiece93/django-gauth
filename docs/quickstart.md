@@ -1,80 +1,199 @@
-## Steps To Follow 
+---
+title: Quickstart
+description: Get Google OAuth2 running in your Django project in 5 minutes.
+tags:
+  - quickstart
+  - tutorial
+---
 
-:fontawesome-brands-square-kickstarter: a real quick starter !! :beers:
+# Quickstart :material-rocket-launch:
 
-1. Add the app name - `django_gauth` in INSTALLED_APPS entry of you project 
-    - <em><small>in your django project's settings.py file</small></em> :
-    ```py title="settings.py" linenums="1" hl_lines="8"
-    INSTALLED_APPS = [
-        'django.contrib.admin',
-        'django.contrib.auth',
-        'django.contrib.contenttypes',
-        'django.contrib.sessions',
-        'django.contrib.messages',
-        'django.contrib.staticfiles',
-        'django_gauth',
-    ]
+!!! tip "Prerequisites"
+    Before starting, ensure you have:
+
+    - [x] `django-gauth` [installed](installation.md)
+    - [x] A Google OAuth2 client configured ([guide](google-cloud-setup.md))
+    - [x] Your `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` ready
+
+## Overview
+
+Here's what we'll do:
+
+```mermaid
+graph LR
+    A[1. Add App] --> B[2. Configure Settings]
+    B --> C[3. Add URLs]
+    C --> D[4. Run Server]
+    D --> E[🎉 Working!]
+
+    style E fill:#4CAF50,color:white,stroke:none
+```
+
+---
+
+## Step 1: Register the App
+
+Add `django_gauth` to your `INSTALLED_APPS`:
+
+```python title="settings.py" linenums="1" hl_lines="8"
+INSTALLED_APPS = [
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',        # ← Required!
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+    'django_gauth',                   # ← Add this
+]
+```
+
+!!! warning "Session Middleware Required"
+    Make sure `django.contrib.sessions.middleware.SessionMiddleware` is in your `MIDDLEWARE`.
+    Django Gauth uses sessions to store OAuth2 state and credentials.
+
+---
+
+## Step 2: Add Settings
+
+Add these variables at the bottom of your `settings.py`:
+
+```python title="settings.py"
+import os
+
+# Google OAuth2 Credentials (from Google Cloud Console)
+GOOGLE_CLIENT_ID = "your-client-id.apps.googleusercontent.com"  # (1)!
+GOOGLE_CLIENT_SECRET = "your-client-secret"  # (2)!
+
+# Where to redirect after successful login
+GOOGLE_AUTH_FINAL_REDIRECT_URL = None  # (3)!
+
+# Session key names (safe defaults — customize if needed)
+CREDENTIALS_SESSION_KEY_NAME = "credentials"
+STATE_KEY_NAME = "oauth_state"
+
+# OAuth2 scopes — what data you're requesting
+SCOPE = [
+    "https://www.googleapis.com/auth/userinfo.email",     # (4)!
+    "https://www.googleapis.com/auth/userinfo.profile",
+    "openid",
+]
+
+# ⚠️ ONLY for local development (allows HTTP instead of HTTPS)
+os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'  # (5)!
+```
+
+1. :material-key: Get this from your Google Cloud Console → Credentials → OAuth 2.0 Client
+2. :material-lock: Keep this secret! Use environment variables in production.
+3. :material-directions: Set to `None` to redirect back to the Gauth landing page (`/gauth/`)
+4. :material-email: Always include email + profile + openid for basic user info
+5. :material-alert: **Remove this in production!** HTTPS is mandatory for deployed apps.
+
+!!! danger "Never commit secrets!"
+    Use environment variables or `.env` files for your credentials:
+
+    ```python
+    import os
+    GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
+    GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
     ```
-2. Add required configuration variables 
-    - <em><small>in your django project's root ( location : `project-name/project-name/` )</small></em> :
-    ```py title="settings.py" linenums="1"
 
-    ... # ... rest of your settings.py file content
+---
 
-    # --- END OF FILE :
+## Step 3: Include URLs
 
-    GOOGLE_CLIENT_ID= env("GOOGLE_CLIENT_ID")           # << set according to your oauth2 client
-    GOOGLE_CLIENT_SECRET= env("GOOGLE_CLIENT_SECRET")   # << set according to your oauth2 client
-    GOOGLE_AUTH_FINAL_REDIRECT_URL= None        # defaults to `<host>/gauth/`
-    CREDENTIALS_SESSION_KEY_NAME= "credentials" # defaults to `credentials`
-    STATE_KEY_NAME= "oauth_state"               # defaults to `oauth_state`
-    SCOPE= [
-        "https://www.googleapis.com/auth/userinfo.email"    # always preffered
-        ,"https://www.googleapis.com/auth/userinfo.profile" # always preffered
-        ,"openid"                                           # always preffered
-        ,"https://www.googleapis.com/auth/drive"            # based on your usage
-    ]
-    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'         # strictly for local-development only
+Add the Gauth URLs to your root `urls.py`:
+
+```python title="urls.py" linenums="1" hl_lines="6"
+from django.contrib import admin
+from django.urls import path, include
+
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    path('gauth/', include('django_gauth.urls')),  # ← Add this
+
+    # ... your other app URLs
+]
+```
+
+This registers three endpoints:
+
+| URL | Purpose |
+|-----|---------|
+| `/gauth/` | Landing page with "Authenticate" button |
+| `/gauth/login/` | Initiates OAuth2 flow → redirects to Google |
+| `/gauth/login-callback` | Handles Google's response after consent |
+
+!!! note "Debug Endpoint"
+    When `DEBUG=True`, an additional endpoint is available:
+
+    | URL | Purpose |
+    |-----|---------|
+    | `/gauth/debug` | Shows sanitized session data as JSON |
+
+---
+
+## Step 4: Run & Test
+
+=== "Using 127.0.0.1 (default)"
+
+    ```bash
+    python manage.py runserver 8000
     ```
-    - explainantion :
-        - `os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'` directs the server to accept in-secure ( http ) connections .
 
-3. configure auth urls 
-    - <em><small>in your django project's root ( location : `project-name/project-name/` )</small></em> :
-    ```py title="urls.py" linenums="1" hl_lines="6"
-    from django.contrib import admin
-    from django.urls import path, include
+=== "Using localhost"
 
-    urlpatterns = [
-        path('admin/', admin.site.urls),
-        path('gauth/', include('django_gauth.urls')),
-        
-        # add your other app's urls
-        # ...
-
-    ]
+    ```bash
+    python manage.py runserver localhost:8000
     ```
 
-- Now run the application server :
+!!! success "You're done! :tada:"
+    Navigate to **http://127.0.0.1:8000/gauth/** to see the landing page.
 
-    === "127.0.0.1 ( default )"
-        ```bnf
-        python3 manage.py runserver 8000
-        ```
-    === "Localhost"
-        ```bnf
-        python3 manage.py runserver localhost:8000
-        ```
-    - > we have shown port 8000 in use, you can replace any port number of your choice in place of 8000 . ( e.g : 5000, 8080 etc ... )
+    Click **Authenticate** → Sign in with Google → You're redirected back, now authenticated!
 
-Quick Use :
+---
 
-- once your server is up & running , navigate to `.../gauth`, this is the master interface ( default landing page )
-- click on `Authenticate` button to launch Google Oauth2 Login .
-- just follow the flow you are directed to .
-- post authentication , you'll be redirected back to `.../gauth`
+## What Just Happened?
 
-## Important Points
+```mermaid
+sequenceDiagram
+    participant U as 👤 User
+    participant D as 🖥️ Django App
+    participant G as 🔑 Google
 
-- useually all servers ( wsgi, asgi, uWsgi) runs default on `http://127.0.0.1:PORT/` , hence always take care to set the redirect endpoints in your google oauth2 client app in accordance with 127.0.0.1 , don't mistake to consider - _localhost_ , _0.0.0.0_ and _127.0.0.1_ as same while dealing with redirect uri's . 
-    - **For example** : suppose you have set `http://localhost:PORT/gauth/google-callback` as your redirect uri , then take note of running your django app on localhost only !!
+    U->>D: Visit /gauth/
+    D-->>U: Show landing page
+    U->>D: Click "Authenticate"
+    D->>G: Redirect to Google consent
+    G-->>U: Show account picker
+    U->>G: Select account & consent
+    G->>D: Redirect to /gauth/login-callback
+    D->>G: Exchange code for tokens
+    G-->>D: Return access + ID tokens
+    D->>D: Store credentials in session
+    D-->>U: Redirect to final page ✓
+```
+
+---
+
+## Next Steps
+
+<div class="grid cards" markdown>
+
+-   :material-cog:{ .lg .middle } **Configure further**
+
+    [:octicons-arrow-right-24: Settings Reference](configuration/settings.md)
+
+-   :material-server:{ .lg .middle } **Deploy to production**
+
+    [:octicons-arrow-right-24: Production Guide](guides/production.md)
+
+-   :material-head-question:{ .lg .middle } **Understand the flow**
+
+    [:octicons-arrow-right-24: OAuth2 Explained](concepts/oauth2-explained.md)
+
+-   :material-bug:{ .lg .middle } **Something broken?**
+
+    [:octicons-arrow-right-24: Troubleshooting](guides/troubleshooting.md)
+
+</div>
