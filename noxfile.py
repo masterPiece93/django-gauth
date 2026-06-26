@@ -29,6 +29,12 @@ django_versions = [  # Consult pytest-django docs for compatibility
     "5.2"
 ]
 
+# Path to the test env file, resolved relative to this file so the sessions are
+# portable across machines/CI (not tied to a hardcoded absolute path).
+ENV_TEST_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "tests", ".env.test"
+)
+
 def embed_link(uri, label=None):
     """
     Escapes a hyperlink for console output using ANSI escape codes.
@@ -126,10 +132,10 @@ def test_django_versions__pytest(session: nox.Session, django: str):
     session.install("pytest-django")  # Pytest :Plugin Django-specific
     # NOX ENV
     NOX_RUNTIME_ENV = { # pylint: disable=invalid-name
-        "AUTOMATION": "0",  # Google OAuth client ID
-        "ENV_PATH": "/home/ubuntu/Documents/personal/django-gauth/tests/.env.test",  # Google OAuth client secret
+        "AUTOMATION": "0",  # Automation tests toggle (off)
+        "ENV_PATH": ENV_TEST_PATH,  # Path to the test .env file
         "GOOGLE_CLIENT_ID": os.environ["GOOGLE_CLIENT_ID"],  # Google OAuth client ID
-        "GOOGLE_CLIENT_SECRET": os.environ["GOOGLE_CLIENT_ID"]  # Google OAuth client secret
+        "GOOGLE_CLIENT_SECRET": os.environ["GOOGLE_CLIENT_SECRET"]  # Google OAuth client secret
     }
     # Run Pytest
     session.run("pytest", env=NOX_RUNTIME_ENV)
@@ -184,10 +190,13 @@ def test_django_versions__runner(session: nox.Session, django: str):
     session.install("selenium")
     session.install("undetected-chromedriver")
     session.install("setuptools")
+    # Coverage: runtests.py uses coverage; the `[toml]` extra is required so it can
+    # read its config from pyproject.toml on Python < 3.11 (no stdlib `tomllib`).
+    session.install("coverage[toml]")
     # NOX ENV
     NOX_RUNTIME_ENV = { # pylint: disable=invalid-name
-        "AUTOMATION": "0",  # Google OAuth client ID
-        "ENV_PATH": "/home/ubuntu/Documents/personal/django-gauth/tests/.env.test",  # Google OAuth client secret
+        "AUTOMATION": "0",  # Automation tests toggle (off)
+        "ENV_PATH": ENV_TEST_PATH,  # Path to the test .env file
     }
     # Run Django Test runner
-    session.run("python3", "runtests", env=NOX_RUNTIME_ENV)
+    session.run("python3", "runtests.py", env=NOX_RUNTIME_ENV)
