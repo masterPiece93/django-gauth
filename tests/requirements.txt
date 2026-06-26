@@ -10,4 +10,6 @@ selenium
 undetected-chromedriver
 setuptools
 # coverage
-coverage
+# `[toml]` extra is required so coverage can read its config from pyproject.toml
+# on Python < 3.11 (which lacks the stdlib `tomllib`). No-op on 3.11+.
+coverage[toml]
