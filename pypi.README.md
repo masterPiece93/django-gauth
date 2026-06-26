@@ -62,5 +62,10 @@
     - For example : suppose you have set `http://localhost:PORT/gauth/google-callback` as your redirect uri , then take note of running your django app on localhost:PORT only !!
 
 ---
+
+## Changelog
+
+See [`CHANGELOG.md`](https://github.com/masterPiece93/django-gauth/blob/main/CHANGELOG.md) for the full release history and notable changes in each version.
+
 <br>
 
