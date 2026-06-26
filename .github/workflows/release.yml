@@ -16,7 +16,14 @@ permissions:
   contents: read
 
 jobs:
+  # Gate: do not build or publish unless the full CI suite (lint + test matrix +
+  # coverage) passes. Reuses tests.yml via `workflow_call`.
+  tests:
+    name: CI gate
+    uses: ./.github/workflows/tests.yml
+
   release-build:
+    needs: tests
     runs-on: ubuntu-latest
 
     steps:

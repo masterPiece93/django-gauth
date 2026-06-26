@@ -1,2 +1,3 @@
+include CHANGELOG.md
 recursive-include src/django_gauth/static *
 recursive-include src/django_gauth/templates *

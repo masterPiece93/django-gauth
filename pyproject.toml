@@ -41,6 +41,8 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Internet :: WWW/HTTP",
     "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+    "Topic :: Internet :: WWW/HTTP :: Session",
+    "Topic :: Security",
     "Topic :: Utilities",
     "Typing :: Typed"
 ]
@@ -54,8 +56,9 @@ dependencies = [
 [project.urls]
 #Homepage = "/"
 Documentation = "https://masterpiece93.github.io/django-gauth/"
-Repository = "https://github.com/masterPiece93/django-gauth"
-Changelog = "https://github.com/masterPiece93/django-gauth/releases"
+Source = "https://github.com/masterPiece93/django-gauth"
+Issues = "https://github.com/masterPiece93/django-gauth/issues"
+Changelog = "https://github.com/masterPiece93/django-gauth/blob/main/CHANGELOG.md"
 
 [dependency-groups]
 dev = [
@@ -283,6 +286,13 @@ omit = [
 exclude = [
     "somedir",
     "*somefile.py",
+]
+# Names that are part of external API contracts and intentionally unused.
+# Django system-check functions must accept `app_configs` and `**kwargs`
+# even when they are not referenced in the body.
+ignore_names = [
+    "app_configs",
+    "kwargs",
 ]
 
 # Configuration for Pylint
