@@ -14,7 +14,7 @@ All notable changes to this project are documented here.
 
 ## v0.2.1
 
-:material-calendar: 2025-06-25
+:material-calendar: 2026-06-25
 
 ### Changed
 
