@@ -6,6 +6,8 @@
 [![Downloads](https://img.shields.io/pypi/dm/django-gauth?label=downloads&color=brightgreen)](https://pypi.org/project/django-gauth/)
 [![License](https://img.shields.io/pypi/l/django-gauth?color=green)](https://github.com/masterPiece93/django-gauth/blob/main/LICENSE)
 [![Documentation](https://img.shields.io/badge/docs-online-blue)](https://masterpiece93.github.io/django-gauth/)
+[![tests](https://github.com/masterPiece93/django-gauth/actions/workflows/tests.yml/badge.svg)](https://github.com/masterPiece93/django-gauth/actions/workflows/tests.yml)
+[![coverage](https://raw.githubusercontent.com/masterPiece93/django-gauth/badges/coverage.svg)](https://github.com/masterPiece93/django-gauth/actions/workflows/tests.yml)
 [![pages-build-deployment](https://github.com/masterPiece93/django-gauth/actions/workflows/pages/pages-build-deployment/badge.svg)](https://github.com/masterPiece93/django-gauth/actions/workflows/pages/pages-build-deployment)
 [![Pylint](https://github.com/masterPiece93/django-gauth/actions/workflows/pylint.yml/badge.svg)](https://github.com/masterPiece93/django-gauth/actions/workflows/pylint.yml)
 

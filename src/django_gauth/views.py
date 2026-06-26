@@ -7,15 +7,16 @@ import urllib.parse
 from copy import deepcopy
 from typing import Optional
 
-from django.conf import settings    # pylint: disable=import-error
-from django.http import HttpRequest, JsonResponse   # pylint: disable=import-error
-from django.shortcuts import redirect, render   # pylint: disable=import-error
-from django.urls import reverse # pylint: disable=import-error
+from django.conf import settings  # pylint: disable=import-error
+from django.http import HttpRequest, JsonResponse  # pylint: disable=import-error
+from django.shortcuts import redirect, render  # pylint: disable=import-error
+from django.urls import reverse  # pylint: disable=import-error
 from google.auth.transport import requests  # pylint: disable=import-error
 from google.oauth2 import id_token  # pylint: disable=import-error
 from google_auth_oauthlib.flow import Flow  # pylint: disable=import-error
 
 from django_gauth.utilities import check_gauth_authentication, credentials_to_dict
+
 
 def get_origin_url(request: HttpRequest) -> tuple[Optional[str], bool]:  # type: ignore
     """check origin url"""
@@ -173,7 +174,7 @@ def callback(request: HttpRequest):  # type: ignore
     credentials = flow.credentials
     # verify token, while also retrieving information about the user
     id_info = id_token.verify_oauth2_token(
-        id_token=credentials._id_token, # pylint: disable=protected-access
+        id_token=credentials._id_token,  # pylint: disable=protected-access
         request=requests.Request(),
         audience=settings.GOOGLE_CLIENT_ID,
         clock_skew_in_seconds=5,
@@ -187,6 +188,7 @@ def callback(request: HttpRequest):  # type: ignore
     redirect_response = redirect(request.session[settings.FINAL_REDIRECT_KEY_NAME])
 
     return redirect_response
+
 
 def debug_information(request: HttpRequest):  # type: ignore
     """

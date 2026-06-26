@@ -287,6 +287,13 @@ exclude = [
     "somedir",
     "*somefile.py",
 ]
+# Names that are part of external API contracts and intentionally unused.
+# Django system-check functions must accept `app_configs` and `**kwargs`
+# even when they are not referenced in the body.
+ignore_names = [
+    "app_configs",
+    "kwargs",
+]
 
 # Configuration for Pylint
 [tool.pylint.main]
