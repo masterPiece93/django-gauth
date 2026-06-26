@@ -41,6 +41,8 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Internet :: WWW/HTTP",
     "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+    "Topic :: Internet :: WWW/HTTP :: Session",
+    "Topic :: Security",
     "Topic :: Utilities",
     "Typing :: Typed"
 ]
@@ -54,7 +56,8 @@ dependencies = [
 [project.urls]
 #Homepage = "/"
 Documentation = "https://masterpiece93.github.io/django-gauth/"
-Repository = "https://github.com/masterPiece93/django-gauth"
+Source = "https://github.com/masterPiece93/django-gauth"
+Issues = "https://github.com/masterPiece93/django-gauth/issues"
 Changelog = "https://github.com/masterPiece93/django-gauth/blob/main/CHANGELOG.md"
 
 [dependency-groups]

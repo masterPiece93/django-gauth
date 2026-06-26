@@ -1,9 +1,35 @@
-# Google Auth <sup>[ Django ]<sup>
+# Google Auth <sup>[ Django ]</sup>
 
-![Static Badge](https://img.shields.io/badge/latest-0.2.1-blue)  [![pages-build-deployment](https://github.com/masterPiece93/django-gauth/actions/workflows/pages/pages-build-deployment/badge.svg)](https://github.com/masterPiece93/django-gauth/actions/workflows/pages/pages-build-deployment)  [![Pylint](https://github.com/masterPiece93/django-gauth/actions/workflows/pylint.yml/badge.svg)](https://github.com/masterPiece93/django-gauth/actions/workflows/pylint.yml)
-
+[![PyPI version](https://img.shields.io/pypi/v/django-gauth?label=PyPI&color=blue)](https://pypi.org/project/django-gauth/)
+[![Python versions](https://img.shields.io/pypi/pyversions/django-gauth)](https://pypi.org/project/django-gauth/)
+[![Django versions](https://img.shields.io/pypi/frameworkversions/django/django-gauth?label=Django&color=0C4B33)](https://pypi.org/project/django-gauth/)
+[![Downloads](https://img.shields.io/pypi/dm/django-gauth?label=downloads&color=brightgreen)](https://pypi.org/project/django-gauth/)
+[![License](https://img.shields.io/pypi/l/django-gauth?color=green)](https://github.com/masterPiece93/django-gauth/blob/main/LICENSE)
+[![Documentation](https://img.shields.io/badge/docs-online-blue)](https://masterpiece93.github.io/django-gauth/)
+[![pages-build-deployment](https://github.com/masterPiece93/django-gauth/actions/workflows/pages/pages-build-deployment/badge.svg)](https://github.com/masterPiece93/django-gauth/actions/workflows/pages/pages-build-deployment)
+[![Pylint](https://github.com/masterPiece93/django-gauth/actions/workflows/pylint.yml/badge.svg)](https://github.com/masterPiece93/django-gauth/actions/workflows/pylint.yml)
 
 > [Official Documentation](https://masterpiece93.github.io/django-gauth/)
+
+## Why django-gauth?
+
+> **Google sign-in for Django in 5 minutes — without the django-allauth configuration maze.**
+
+`django-gauth` does exactly one thing well: add **Google OAuth2 login** to an HTTP/HTTPS Django
+project, with a working landing page included — no multi-provider abstractions, no sprawling
+configuration, just the Google flow, clearly documented.
+
+| | **django-gauth** | **django-allauth** | **Roll-your-own** |
+| --- | :---: | :---: | :---: |
+| Setup for *just Google* | ⚡ Minimal (3 settings + 1 URL include) | 🧩 Broad, multi-step config | 🛠️ Manual OAuth wiring |
+| Built-in login page | ✅ Ships a landing page | ➖ Bring your own templates | ❌ Build it yourself |
+| Scope | 🎯 Google OAuth2 only | 🌐 Many providers | 🎯 Whatever you build |
+| Learning curve | 📉 Low | 📈 Higher (large surface) | ⚠️ Easy to get OAuth subtly wrong |
+| Typed & tested | ✅ Type hints + ~99% coverage | ✅ Mature | ➖ Up to you |
+
+**Reach for `django-allauth`** when you need many providers, account linking, and email
+workflows. **Reach for `django-gauth`** when you want Google sign-in working *today* with
+minimal ceremony.
 
 ## Installation
 
@@ -66,6 +92,12 @@
 ## Changelog
 
 See [`CHANGELOG.md`](https://github.com/masterPiece93/django-gauth/blob/main/CHANGELOG.md) for the full release history and notable changes in each version.
+
+<br>
+
+## Releases
+
+See [`Github Releases`](https://github.com/masterPiece93/django-gauth/releases) for the details of each release in each version .
 
 <br>
 
