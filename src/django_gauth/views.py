@@ -213,16 +213,6 @@ def debug_information(request: HttpRequest):  # type: ignore
         # add token_uri info
         if "token_uri" in value:
             session_data["debug"]["credentials_info"]["token_uri"] = value["token_uri"]
-        # client id match info
-        if "client_id" in value:
-            session_data["debug"]["credentials_info"]["client_id_matches"] = (
-                value["client_id"] == settings.GOOGLE_CLIENT_ID
-            )
-        # client secret match info
-        if "client_secret" in value:
-            session_data["debug"]["credentials_info"]["client_secret_matches"] = (
-                value["client_secret"] == settings.GOOGLE_CLIENT_SECRET
-            )
         # add scopes info
         if "scopes" in value:
             session_data["debug"]["credentials_info"]["scopes"] = value["scopes"]

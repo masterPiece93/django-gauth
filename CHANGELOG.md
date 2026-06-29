@@ -24,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Callback scope mismatch: `callback()` now uses `settings.SCOPE` instead of a hardcoded
   scope list (which included `.../auth/drive`), preventing confusing "Scope has changed"
   errors when a custom `SCOPE` is configured.
+- Security: the OAuth `client_secret` (and `client_id`) are no longer persisted in the
+  session store. `credentials_to_dict()` omits them and `check_gauth_authentication()`
+  re-injects them from settings when rebuilding `Credentials`.
 
 ---
 
