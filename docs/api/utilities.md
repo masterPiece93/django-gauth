@@ -38,11 +38,15 @@ Converts a Google `Credentials` object into a plain dictionary for session stora
     "token": "ya29.a0AfH6...",
     "refresh_token": "1//0d...",
     "token_uri": "https://oauth2.googleapis.com/token",
-    "client_id": "123...apps.googleusercontent.com",
-    "client_secret": "GOCSPX-...",
     "scopes": ["openid", "email", "profile"]
 }
 ```
+
+!!! warning "Secrets are never persisted"
+    `client_id` and `client_secret` are intentionally **omitted** so the OAuth client
+    secret is never written to the session backend. They are re-injected from
+    `settings.GOOGLE_CLIENT_ID` / `settings.GOOGLE_CLIENT_SECRET` when
+    `check_gauth_authentication()` rebuilds the `Credentials` object.
 
 ---
 
@@ -69,7 +73,8 @@ Checks if the current session contains valid, non-expired credentials.
 flowchart TD
     A[check_gauth_authentication] --> B{Credentials in session?}
     B -->|No| C[return False, None]
-    B -->|Yes| D{credentials.valid?}
+    B -->|Yes| R[Rebuild Credentials + inject client_id/secret from settings]
+    R --> D{credentials.valid?}
     D -->|No| E[return False, None]
     D -->|Yes| F{id_info expired?}
     F -->|Yes| G[return False, None]

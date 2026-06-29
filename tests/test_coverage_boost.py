@@ -7,8 +7,8 @@ Extended unit tests to boost coverage across:
 - utilities.py
 - views.py (index, login, get_origin_url, debug_information, callback)
 """
+
 import time
-from copy import deepcopy
 from unittest.mock import MagicMock, patch
 
 from django.conf import settings
@@ -101,7 +101,9 @@ class ErrorCodesTest(TestCase):
     def test_error_codes_values(self):
         self.assertEqual(ErrorCodes.E001.value[0], "MISSING_REQUIRED_SETTINGS")
         self.assertEqual(ErrorCodes.E002.value[0], "MISSING_REQUIRED_MIDDLEWARE")
-        self.assertEqual(ErrorCodes.E003.value[0], "MISSING_REQUIRED_GOOGLE_CREDENTIALS")
+        self.assertEqual(
+            ErrorCodes.E003.value[0], "MISSING_REQUIRED_GOOGLE_CREDENTIALS"
+        )
         self.assertEqual(ErrorCodes.E004.value[0], "INVALID_GAUTH_SCOPE")
 
     def test_formulate_check_id(self):
@@ -116,6 +118,7 @@ class SetDefaultsTest(TestCase):
 
     def _call_set_defaults(self):
         from django_gauth.apps import set_defaults
+
         return set_defaults(app_configs=None)
 
     @override_settings()
@@ -134,7 +137,8 @@ class SetDefaultsTest(TestCase):
         """SCOPE defined → no warning for scope"""
         errors = self._call_set_defaults()
         scope_errors = [
-            e for e in errors
+            e
+            for e in errors
             if hasattr(e, "id") and e.id and ErrorCodes.E004.name in e.id
         ]
         self.assertEqual(scope_errors, [])
@@ -162,7 +166,8 @@ class SetDefaultsTest(TestCase):
         """No info when GOOGLE_AUTH_FINAL_REDIRECT_URL is truthy"""
         errors = self._call_set_defaults()
         redirect_infos = [
-            e for e in errors
+            e
+            for e in errors
             if hasattr(e, "msg") and "GOOGLE_AUTH_FINAL_REDIRECT_URL" in str(e.msg)
         ]
         self.assertEqual(redirect_infos, [])
@@ -234,9 +239,10 @@ class CredentialsToDictTest(TestCase):
         self.assertEqual(result["token"], "access_token_123")
         self.assertEqual(result["refresh_token"], "refresh_token_456")
         self.assertEqual(result["token_uri"], "https://oauth2.googleapis.com/token")
-        self.assertEqual(result["client_id"], "client_id_789")
-        self.assertEqual(result["client_secret"], "secret_abc")
         self.assertEqual(result["scopes"], ["openid", "email"])
+        # client_id/client_secret must never be persisted in the session (ISSUE-2)
+        self.assertNotIn("client_id", result)
+        self.assertNotIn("client_secret", result)
 
 
 class HasEpochTimePassedTest(TestCase):
@@ -275,8 +281,6 @@ class CheckGauthAuthenticationTest(TestCase):
                 "token": "tok",
                 "refresh_token": "rtok",
                 "token_uri": "https://oauth2.googleapis.com/token",
-                "client_id": "cid",
-                "client_secret": "cs",
                 "scopes": [],
             }
         }
@@ -295,8 +299,6 @@ class CheckGauthAuthenticationTest(TestCase):
                 "token": "tok",
                 "refresh_token": "rtok",
                 "token_uri": "https://oauth2.googleapis.com/token",
-                "client_id": "cid",
-                "client_secret": "cs",
                 "scopes": [],
             }
         }
@@ -315,8 +317,6 @@ class CheckGauthAuthenticationTest(TestCase):
                 "token": "tok",
                 "refresh_token": "rtok",
                 "token_uri": "https://oauth2.googleapis.com/token",
-                "client_id": "cid",
-                "client_secret": "cs",
                 "scopes": [],
             },
             "id_info": {"exp": time.time() - 1000},  # expired
@@ -336,8 +336,6 @@ class CheckGauthAuthenticationTest(TestCase):
                 "token": "tok",
                 "refresh_token": "rtok",
                 "token_uri": "https://oauth2.googleapis.com/token",
-                "client_id": "cid",
-                "client_secret": "cs",
                 "scopes": [],
             },
             "id_info": {"exp": time.time() + 10000},  # not expired
@@ -345,6 +343,34 @@ class CheckGauthAuthenticationTest(TestCase):
         authenticated, cred = check_gauth_authentication(session)
         self.assertTrue(authenticated)
         self.assertEqual(cred, mock_cred_instance)
+
+
+class CheckGauthClientSecretReinjectionTest(TestCase):
+    """ISSUE-2 regression: client_id/secret come from settings, not the session"""
+
+    @override_settings(
+        GOOGLE_CLIENT_ID="cfg-client-id", GOOGLE_CLIENT_SECRET="cfg-client-secret"
+    )
+    @patch("django_gauth.utilities.Credentials")
+    def test_client_id_secret_injected_from_settings(self, mock_credentials_class):
+        mock_credentials_class.return_value.valid = True
+        # the persisted blob deliberately carries NO client_id/client_secret
+        session = {
+            settings.CREDENTIALS_SESSION_KEY_NAME: {
+                "token": "tok",
+                "refresh_token": "rtok",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "scopes": ["openid"],
+            }
+        }
+        check_gauth_authentication(session)
+        # rebuilt Credentials must receive the values from settings
+        _, kwargs = mock_credentials_class.call_args
+        self.assertEqual(kwargs["client_id"], "cfg-client-id")
+        self.assertEqual(kwargs["client_secret"], "cfg-client-secret")
+        self.assertNotIn(
+            "client_secret", session[settings.CREDENTIALS_SESSION_KEY_NAME]
+        )
 
 
 class IsValidGoogleUrlTest(TestCase):
@@ -380,6 +406,7 @@ class SessionAdminTest(TestCase):
 
     def test_session_admin_registered(self):
         from django.contrib.admin.sites import site
+
         self.assertIn(Session, site._registry)
 
     def test_session_admin_session_data_method(self):
@@ -432,6 +459,7 @@ class GetOriginUrlTest(TestCase):
 
     def test_no_origin_url(self):
         from django_gauth.views import get_origin_url
+
         request = self._make_request()
         result, is_valid = get_origin_url(request)
         self.assertIsNone(result)
@@ -439,6 +467,7 @@ class GetOriginUrlTest(TestCase):
 
     def test_valid_same_origin_url(self):
         from django_gauth.views import get_origin_url
+
         request = self._make_request(origin_url="http%3A//testserver/some-page/")
         result, is_valid = get_origin_url(request)
         self.assertEqual(result, "http://testserver/some-page/")
@@ -446,6 +475,7 @@ class GetOriginUrlTest(TestCase):
 
     def test_different_origin_url(self):
         from django_gauth.views import get_origin_url
+
         request = self._make_request(origin_url="https%3A//other.com/page/")
         result, is_valid = get_origin_url(request)
         self.assertEqual(result, "https://other.com/page/")
@@ -453,6 +483,7 @@ class GetOriginUrlTest(TestCase):
 
     def test_debug_session_populated(self):
         from django_gauth.views import get_origin_url
+
         request = self._make_request(origin_url="http%3A//testserver/page/")
         get_origin_url(request)
         self.assertIn("debug", request.session)
@@ -468,6 +499,7 @@ class GetOriginUrlNonDebugTest(TestCase):
 
     def test_no_debug_data_in_session(self):
         from django_gauth.views import get_origin_url
+
         request = self.factory.get("/gauth/?origin_url=http%3A//testserver/x/")
         request.session = {}
         get_origin_url(request)
@@ -597,6 +629,7 @@ class DebugInformationViewTest(TestCase):
         response = self._make_request(session_data=session_data)
         self.assertEqual(response.status_code, 200)
         import json
+
         data = json.loads(response.content)
         # iss, azp, aud, sub should be sanitized out
         self.assertNotIn("iss", data["session"].get("id_info", {}))
@@ -612,21 +645,21 @@ class DebugInformationViewTest(TestCase):
                 "token": "access_tok",
                 "refresh_token": "ref_tok",
                 "token_uri": "https://oauth2.googleapis.com/token",
-                "client_id": settings.GOOGLE_CLIENT_ID,
-                "client_secret": settings.GOOGLE_CLIENT_SECRET,
                 "scopes": ["openid"],
             },
         }
         response = self._make_request(session_data=session_data)
         self.assertEqual(response.status_code, 200)
         import json
+
         data = json.loads(response.content)
         cred_info = data["session"]["debug"]["credentials_info"]
         self.assertEqual(cred_info["token"], "Exists")
         self.assertEqual(cred_info["refresh_token"], "Exists")
-        self.assertTrue(cred_info["client_id_matches"])
-        self.assertTrue(cred_info["client_secret_matches"])
         self.assertEqual(cred_info["scopes"], ["openid"])
+        # client_id/client_secret are no longer persisted, so never reported (ISSUE-2)
+        self.assertNotIn("client_id_matches", cred_info)
+        self.assertNotIn("client_secret_matches", cred_info)
 
     def test_debug_with_credentials_no_token(self):
         session_data = {
@@ -635,19 +668,16 @@ class DebugInformationViewTest(TestCase):
                 "token": "",
                 "refresh_token": "",
                 "token_uri": "https://oauth2.googleapis.com/token",
-                "client_id": "wrong_id",
-                "client_secret": "wrong_secret",
                 "scopes": [],
             },
         }
         response = self._make_request(session_data=session_data)
         import json
+
         data = json.loads(response.content)
         cred_info = data["session"]["debug"]["credentials_info"]
         self.assertEqual(cred_info["token"], "Not-Exists")
         self.assertEqual(cred_info["refresh_token"], "Not-Exists")
-        self.assertFalse(cred_info["client_id_matches"])
-        self.assertFalse(cred_info["client_secret_matches"])
 
     def test_debug_with_oauth_state(self):
         session_data = {
@@ -656,12 +686,13 @@ class DebugInformationViewTest(TestCase):
         }
         response = self._make_request(session_data=session_data)
         import json
+
         data = json.loads(response.content)
         # oauth_state should be stripped from response
         self.assertNotIn("oauth_state", data["session"])
 
     def test_debug_credentials_missing_keys(self):
-        """Cover branches where token_uri/client_id/client_secret/scopes keys are absent"""
+        """Cover branches where token_uri/scopes keys are absent"""
         session_data = {
             "debug": {},
             "credentials": {
@@ -671,6 +702,7 @@ class DebugInformationViewTest(TestCase):
         }
         response = self._make_request(session_data=session_data)
         import json
+
         data = json.loads(response.content)
         cred_info = data["session"]["debug"]["credentials_info"]
         self.assertEqual(cred_info["token"], "Exists")
@@ -703,7 +735,7 @@ class CallbackViewTest(TestCase):
         mock_credentials.client_id = settings.GOOGLE_CLIENT_ID
         mock_credentials.client_secret = settings.GOOGLE_CLIENT_SECRET
         mock_credentials.scopes = ["openid"]
-        mock_credentials._id_token = "fake_id_token"
+        mock_credentials.id_token = "fake_id_token"
         mock_flow_instance.credentials = mock_credentials
 
         # Setup mock id_token verification
@@ -731,6 +763,9 @@ class CallbackViewTest(TestCase):
         # Verify session was populated
         self.assertIn("id_info", request.session)
         self.assertIn(settings.CREDENTIALS_SESSION_KEY_NAME, request.session)
+        # ISSUE-3 regression: callback must read the public ``id_token`` property,
+        # not the private ``_id_token`` attribute.
+        self.assertEqual(mock_verify.call_args.kwargs["id_token"], "fake_id_token")
 
     @patch("django_gauth.views.id_token.verify_oauth2_token")
     @patch("django_gauth.views.Flow.from_client_config")
@@ -748,7 +783,7 @@ class CallbackViewTest(TestCase):
         mock_credentials.client_id = settings.GOOGLE_CLIENT_ID
         mock_credentials.client_secret = settings.GOOGLE_CLIENT_SECRET
         mock_credentials.scopes = ["openid", "email"]
-        mock_credentials._id_token = "id_tok"
+        mock_credentials.id_token = "id_tok"
         mock_flow_instance.credentials = mock_credentials
 
         mock_verify.return_value = {
@@ -769,3 +804,132 @@ class CallbackViewTest(TestCase):
         self.assertEqual(creds["token"], "my_access_token")
         self.assertEqual(creds["refresh_token"], "my_refresh_token")
         self.assertEqual(creds["scopes"], ["openid", "email"])
+        # ISSUE-2: client secret must never be persisted in the session
+        self.assertNotIn("client_secret", creds)
+        self.assertNotIn("client_id", creds)
+
+    @override_settings(
+        SCOPE=[
+            "https://www.googleapis.com/auth/userinfo.email",
+            "openid",
+        ]
+    )
+    @patch("django_gauth.views.id_token.verify_oauth2_token")
+    @patch("django_gauth.views.Flow.from_client_config")
+    def test_callback_uses_settings_scope(self, mock_flow_class, mock_verify):
+        """ISSUE-1 regression: callback must use settings.SCOPE, not a hardcoded list.
+
+        Guards against the authorization request and token exchange diverging
+        (which produces confusing "Scope has changed" errors).
+        """
+        from django.contrib.sessions.backends.db import SessionStore
+        from django_gauth.views import callback
+
+        mock_flow_instance = MagicMock()
+        mock_flow_class.return_value = mock_flow_instance
+        mock_credentials = MagicMock()
+        mock_credentials.scopes = settings.SCOPE
+        mock_credentials.id_token = "id_tok"
+        mock_flow_instance.credentials = mock_credentials
+        mock_verify.return_value = {
+            "email": "user@example.com",
+            "exp": time.time() + 3600,
+        }
+
+        request = self.factory.get("/gauth/login-callback?state=s&code=c")
+        session = SessionStore()
+        session[settings.STATE_KEY_NAME] = "s"
+        session[settings.FINAL_REDIRECT_KEY_NAME] = "http://testserver/"
+        session.create()
+        request.session = session
+
+        callback(request)
+
+        # The scopes passed to Flow must match settings.SCOPE exactly
+        _, kwargs = mock_flow_class.call_args
+        self.assertEqual(kwargs["scopes"], settings.SCOPE)
+        # And must not contain the previously hardcoded drive scope
+        self.assertNotIn("https://www.googleapis.com/auth/drive", kwargs["scopes"])
+
+    @patch("django_gauth.views.Flow.from_client_config")
+    def test_callback_state_mismatch_returns_400(self, mock_flow_class):
+        """ISSUE-4: a returned state that differs from the session state is rejected."""
+        from django.contrib.sessions.backends.db import SessionStore
+        from django_gauth.views import callback
+
+        request = self.factory.get("/gauth/login-callback?state=evil&code=c")
+        session = SessionStore()
+        session[settings.STATE_KEY_NAME] = "expected"
+        session.create()
+        request.session = session
+
+        response = callback(request)
+        self.assertEqual(response.status_code, 400)
+        # the OAuth flow must never be exercised on a bad state
+        mock_flow_class.assert_not_called()
+
+    @patch("django_gauth.views.Flow.from_client_config")
+    def test_callback_missing_request_state_returns_400(self, mock_flow_class):
+        """ISSUE-4: a callback without a state query param is rejected."""
+        from django.contrib.sessions.backends.db import SessionStore
+        from django_gauth.views import callback
+
+        request = self.factory.get("/gauth/login-callback?code=c")
+        session = SessionStore()
+        session[settings.STATE_KEY_NAME] = "expected"
+        session.create()
+        request.session = session
+
+        response = callback(request)
+        self.assertEqual(response.status_code, 400)
+        mock_flow_class.assert_not_called()
+
+    @patch("django_gauth.views.Flow.from_client_config")
+    def test_callback_missing_session_state_returns_400(self, mock_flow_class):
+        """ISSUE-4: a missing/expired session state is rejected."""
+        from django.contrib.sessions.backends.db import SessionStore
+        from django_gauth.views import callback
+
+        request = self.factory.get("/gauth/login-callback?state=s&code=c")
+        session = SessionStore()
+        session.create()
+        request.session = session
+
+        response = callback(request)
+        self.assertEqual(response.status_code, 400)
+        mock_flow_class.assert_not_called()
+
+    @patch("django_gauth.views.Flow.from_client_config")
+    def test_callback_access_denied_redirects_gracefully(self, mock_flow_class):
+        """ISSUE-5: error=access_denied lands on the configured redirect, no crash."""
+        from django.contrib.sessions.backends.db import SessionStore
+        from django_gauth.views import callback
+
+        request = self.factory.get("/gauth/login-callback?error=access_denied&state=s")
+        session = SessionStore()
+        session[settings.STATE_KEY_NAME] = "s"
+        session[settings.FINAL_REDIRECT_KEY_NAME] = "http://testserver/home/"
+        session.create()
+        request.session = session
+
+        response = callback(request)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, "http://testserver/home/")
+        # the OAuth flow must not be touched when the user cancelled
+        mock_flow_class.assert_not_called()
+
+    @patch("django_gauth.views.Flow.from_client_config")
+    def test_callback_error_without_redirect_falls_back_to_index(self, mock_flow_class):
+        """ISSUE-5: with no stored redirect, errors land on the package index."""
+        from django.contrib.sessions.backends.db import SessionStore
+        from django_gauth.views import callback
+
+        request = self.factory.get("/gauth/login-callback?error=server_error")
+        session = SessionStore()
+        session.create()
+        request.session = session
+
+        response = callback(request)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/gauth", response.url)
+        mock_flow_class.assert_not_called()

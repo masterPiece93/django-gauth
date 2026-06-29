@@ -8,7 +8,11 @@ from copy import deepcopy
 from typing import Optional
 
 from django.conf import settings  # pylint: disable=import-error
-from django.http import HttpRequest, JsonResponse  # pylint: disable=import-error
+from django.http import (  # pylint: disable=import-error
+    HttpRequest,
+    HttpResponseBadRequest,
+    JsonResponse,
+)
 from django.shortcuts import redirect, render  # pylint: disable=import-error
 from django.urls import reverse  # pylint: disable=import-error
 from google.auth.transport import requests  # pylint: disable=import-error
@@ -146,6 +150,24 @@ def callback(request: HttpRequest):  # type: ignore
     """
     # pull the state from the session
     session_state = request.session.get(settings.STATE_KEY_NAME)
+
+    # ISSUE-5: handle provider-reported errors before assuming success. When the
+    # user clicks "Deny" (or consent fails) Google redirects back with
+    # ?error=access_denied and no code, so attempting a token exchange would
+    # crash. Route to a graceful landing page instead.
+    if request.GET.get("error"):
+        fallback = request.session.get(settings.FINAL_REDIRECT_KEY_NAME)
+        return redirect(fallback or reverse("django_gauth:index"))
+
+    # ISSUE-4: explicitly verify the returned state matches the one we stored at
+    # login. Defends against CSRF, expired sessions, and replayed callback links
+    # by surfacing a clear error instead of a raw oauthlib stack trace.
+    request_state = request.GET.get("state")
+    if not session_state or not request_state or request_state != session_state:
+        return HttpResponseBadRequest(
+            "Invalid or missing OAuth state. Please restart the sign-in process."
+        )
+
     redirect_uri = request.build_absolute_uri(reverse("django_gauth:callback"))
     authorization_response = request.build_absolute_uri()
     # Flow Creation
@@ -158,12 +180,7 @@ def callback(request: HttpRequest):  # type: ignore
                 "token_uri": "https://oauth2.googleapis.com/token",
             }
         },
-        scopes=[
-            "https://www.googleapis.com/auth/userinfo.email",
-            "https://www.googleapis.com/auth/userinfo.profile",
-            "openid",
-            "https://www.googleapis.com/auth/drive",
-        ],
+        scopes=settings.SCOPE,
         state=session_state,
     )
 
@@ -174,7 +191,7 @@ def callback(request: HttpRequest):  # type: ignore
     credentials = flow.credentials
     # verify token, while also retrieving information about the user
     id_info = id_token.verify_oauth2_token(
-        id_token=credentials._id_token,  # pylint: disable=protected-access
+        id_token=credentials.id_token,
         request=requests.Request(),
         audience=settings.GOOGLE_CLIENT_ID,
         clock_skew_in_seconds=5,
@@ -218,16 +235,6 @@ def debug_information(request: HttpRequest):  # type: ignore
         # add token_uri info
         if "token_uri" in value:
             session_data["debug"]["credentials_info"]["token_uri"] = value["token_uri"]
-        # client id match info
-        if "client_id" in value:
-            session_data["debug"]["credentials_info"]["client_id_matches"] = (
-                value["client_id"] == settings.GOOGLE_CLIENT_ID
-            )
-        # client secret match info
-        if "client_secret" in value:
-            session_data["debug"]["credentials_info"]["client_secret_matches"] = (
-                value["client_secret"] == settings.GOOGLE_CLIENT_SECRET
-            )
         # add scopes info
         if "scopes" in value:
             session_data["debug"]["credentials_info"]["scopes"] = value["scopes"]

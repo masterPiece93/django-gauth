@@ -72,24 +72,33 @@ Handles Google's OAuth2 callback after user consent.
 | **URL** | `/gauth/login-callback` |
 | **Method** | `GET` |
 | **URL Name** | `django_gauth:callback` |
-| **Response** | `302 Redirect` to final URL |
+| **Response** | `302 Redirect` to final URL (success or cancellation) · `400 Bad Request` on state mismatch |
 
 **Query Parameters (set by Google):**
 
 | Param | Description |
 |-------|-------------|
 | `code` | Authorization code to exchange for tokens |
-| `state` | State parameter for CSRF verification |
+| `state` | State parameter for CSRF verification (must match the session) |
+| `error` | Present when the user denies consent or Google reports a problem (e.g. `access_denied`) |
 
 **What it does:**
 
 ```mermaid
 flowchart LR
-    A[Verify state] --> B[Exchange code for tokens]
-    B --> C[Verify ID token]
-    C --> D[Store credentials in session]
-    D --> E[302 → final redirect]
+    A[Provider error?] -->|yes| Z[302 → final redirect]
+    A -->|no| B[Verify state]
+    B -->|mismatch| X[400 Bad Request]
+    B -->|ok| C[Exchange code for tokens]
+    C --> D[Verify ID token]
+    D --> E[Store credentials in session]
+    E --> F[302 → final redirect]
 ```
+
+!!! tip "Graceful error handling"
+    If Google returns `?error=...` (e.g. the user clicked **Deny**), the callback
+    redirects to the configured landing page instead of crashing. A missing or
+    mismatched `state` returns a clear **400** rather than an opaque stack trace.
 
 ---
 
@@ -107,7 +116,8 @@ Returns sanitized session data as JSON. **Only available when `DEBUG=True`.**
 **Sanitization:**
 
 - `id_info`: Removes `iss`, `azp`, `aud`, `sub`
-- `credentials`: Shows existence only (not raw tokens)
+- `credentials`: Shows token/refresh-token existence and scopes only (no raw tokens; the
+  `client_id`/`client_secret` are not persisted at all)
 - `oauth_state`: Completely removed
 
 ---

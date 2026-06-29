@@ -19,6 +19,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub issue templates (`bug_report.yml`, `feature_request.yml`, `config.yml`) and a
   pull request template.
 
+### Fixed
+
+- Callback scope mismatch: `callback()` now uses `settings.SCOPE` instead of a hardcoded
+  scope list (which included `.../auth/drive`), preventing confusing "Scope has changed"
+  errors when a custom `SCOPE` is configured.
+- Security: the OAuth `client_secret` (and `client_id`) are no longer persisted in the
+  session store. `credentials_to_dict()` omits them and `check_gauth_authentication()`
+  re-injects them from settings when rebuilding `Credentials`.
+- Robustness: `callback()` now reads the public `credentials.id_token` property instead of
+  the private `credentials._id_token` attribute, avoiding breakage on future `google-auth`
+  releases.
+- Friendly state-mismatch handling: `callback()` explicitly compares the returned `state`
+  with the session value and returns a clear `400` (instead of an opaque oauthlib stack
+  trace) when it is missing or mismatched — guarding against CSRF, expired sessions, and
+  replayed callback links.
+- Callback error-path handling: `callback()` now detects provider errors (e.g. the user
+  clicking *Deny* → `?error=access_denied`) and redirects gracefully to the configured
+  landing page instead of crashing on a missing authorization `code`.
+
 ---
 
 ## [0.2.1] - 2026-06-25
