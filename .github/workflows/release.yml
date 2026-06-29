@@ -21,6 +21,11 @@ jobs:
   tests:
     name: CI gate
     uses: ./.github/workflows/tests.yml
+    # tests.yml's coverage-badge job statically declares contents: write; a
+    # reused workflow can't exceed the caller's grant, so allow it here. The
+    # badge job itself is skipped on workflow_call (push-to-main guard).
+    permissions:
+      contents: write
 
   release-build:
     needs: tests
