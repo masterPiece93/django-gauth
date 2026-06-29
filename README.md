@@ -39,6 +39,10 @@ from test PyPi
 pip install -i https://test.pypi.org/simple/ django-gauth
 ```
 
+> 📌 **Compatibility note:** If you must stay on `django-gauth < 0.2.1`, pin
+> `google-auth-oauthlib<1.3.0,>=1.0.0` in your project requirements to avoid
+> PKCE-related OAuth failures. Versions `0.2.1+` pin this for you.
+
 ## Quickstart
 
 1. add the app name : `django_gauth` in **INSTALLED_APPS** entry of you project ( in settings.py file )

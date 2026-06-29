@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- Added a compatibility warning (installation, troubleshooting, README, and PyPI readme)
+  advising users on `django-gauth < 0.2.1` to pin `google-auth-oauthlib<1.3.0,>=1.0.0`
+  to avoid PKCE-related OAuth failures (issue #54).
+
 ## [0.2.2] - 2026-06-29
 
 ### Added
