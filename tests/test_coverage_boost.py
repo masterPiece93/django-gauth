@@ -9,7 +9,6 @@ Extended unit tests to boost coverage across:
 """
 
 import time
-from copy import deepcopy
 from unittest.mock import MagicMock, patch
 
 from django.conf import settings
