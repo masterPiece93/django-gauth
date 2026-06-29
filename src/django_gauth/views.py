@@ -8,7 +8,11 @@ from copy import deepcopy
 from typing import Optional
 
 from django.conf import settings  # pylint: disable=import-error
-from django.http import HttpRequest, JsonResponse  # pylint: disable=import-error
+from django.http import (  # pylint: disable=import-error
+    HttpRequest,
+    HttpResponseBadRequest,
+    JsonResponse,
+)
 from django.shortcuts import redirect, render  # pylint: disable=import-error
 from django.urls import reverse  # pylint: disable=import-error
 from google.auth.transport import requests  # pylint: disable=import-error
@@ -146,6 +150,16 @@ def callback(request: HttpRequest):  # type: ignore
     """
     # pull the state from the session
     session_state = request.session.get(settings.STATE_KEY_NAME)
+
+    # ISSUE-4: explicitly verify the returned state matches the one we stored at
+    # login. Defends against CSRF, expired sessions, and replayed callback links
+    # by surfacing a clear error instead of a raw oauthlib stack trace.
+    request_state = request.GET.get("state")
+    if not session_state or not request_state or request_state != session_state:
+        return HttpResponseBadRequest(
+            "Invalid or missing OAuth state. Please restart the sign-in process."
+        )
+
     redirect_uri = request.build_absolute_uri(reverse("django_gauth:callback"))
     authorization_response = request.build_absolute_uri()
     # Flow Creation

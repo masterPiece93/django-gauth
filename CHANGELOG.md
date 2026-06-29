@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Robustness: `callback()` now reads the public `credentials.id_token` property instead of
   the private `credentials._id_token` attribute, avoiding breakage on future `google-auth`
   releases.
+- Friendly state-mismatch handling: `callback()` explicitly compares the returned `state`
+  with the session value and returns a clear `400` (instead of an opaque oauthlib stack
+  trace) when it is missing or mismatched — guarding against CSRF, expired sessions, and
+  replayed callback links.
 
 ---
 

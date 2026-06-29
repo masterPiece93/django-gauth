@@ -851,3 +851,51 @@ class CallbackViewTest(TestCase):
         self.assertEqual(kwargs["scopes"], settings.SCOPE)
         # And must not contain the previously hardcoded drive scope
         self.assertNotIn("https://www.googleapis.com/auth/drive", kwargs["scopes"])
+
+    @patch("django_gauth.views.Flow.from_client_config")
+    def test_callback_state_mismatch_returns_400(self, mock_flow_class):
+        """ISSUE-4: a returned state that differs from the session state is rejected."""
+        from django.contrib.sessions.backends.db import SessionStore
+        from django_gauth.views import callback
+
+        request = self.factory.get("/gauth/login-callback?state=evil&code=c")
+        session = SessionStore()
+        session[settings.STATE_KEY_NAME] = "expected"
+        session.create()
+        request.session = session
+
+        response = callback(request)
+        self.assertEqual(response.status_code, 400)
+        # the OAuth flow must never be exercised on a bad state
+        mock_flow_class.assert_not_called()
+
+    @patch("django_gauth.views.Flow.from_client_config")
+    def test_callback_missing_request_state_returns_400(self, mock_flow_class):
+        """ISSUE-4: a callback without a state query param is rejected."""
+        from django.contrib.sessions.backends.db import SessionStore
+        from django_gauth.views import callback
+
+        request = self.factory.get("/gauth/login-callback?code=c")
+        session = SessionStore()
+        session[settings.STATE_KEY_NAME] = "expected"
+        session.create()
+        request.session = session
+
+        response = callback(request)
+        self.assertEqual(response.status_code, 400)
+        mock_flow_class.assert_not_called()
+
+    @patch("django_gauth.views.Flow.from_client_config")
+    def test_callback_missing_session_state_returns_400(self, mock_flow_class):
+        """ISSUE-4: a missing/expired session state is rejected."""
+        from django.contrib.sessions.backends.db import SessionStore
+        from django_gauth.views import callback
+
+        request = self.factory.get("/gauth/login-callback?state=s&code=c")
+        session = SessionStore()
+        session.create()
+        request.session = session
+
+        response = callback(request)
+        self.assertEqual(response.status_code, 400)
+        mock_flow_class.assert_not_called()
