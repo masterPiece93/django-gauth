@@ -14,12 +14,13 @@ __all__ = [
 
 
 def credentials_to_dict(credentials: Credentials) -> Dict[str, Any]:
+    # ``client_id`` and ``client_secret`` are intentionally omitted so that the
+    # OAuth client secret is never persisted in the session backend. They are
+    # re-injected from ``settings`` in ``check_gauth_authentication``.
     return {
         "token": credentials.token,
         "refresh_token": credentials.refresh_token,
         "token_uri": credentials.token_uri,
-        "client_id": credentials.client_id,
-        "client_secret": credentials.client_secret,
         "scopes": credentials.scopes,
     }
 
@@ -47,8 +48,13 @@ def check_gauth_authentication(session: Settings) -> Tuple[bool, object]:
     if credentials_session_key not in session:
         return False, None
 
-    # Load credentials from the session.
-    credentials = Credentials(**session[credentials_session_key])
+    # Load credentials from the session, re-injecting the client_id/secret from
+    # settings (they are never persisted in the session store, see ISSUE-2).
+    credentials = Credentials(
+        **session[credentials_session_key],
+        client_id=settings.GOOGLE_CLIENT_ID,
+        client_secret=settings.GOOGLE_CLIENT_SECRET,
+    )
 
     if not credentials.valid:
         return False, None
