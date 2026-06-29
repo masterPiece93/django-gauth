@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub issue templates (`bug_report.yml`, `feature_request.yml`, `config.yml`) and a
   pull request template.
 
+### Fixed
+
+- Callback scope mismatch: `callback()` now uses `settings.SCOPE` instead of a hardcoded
+  scope list (which included `.../auth/drive`), preventing confusing "Scope has changed"
+  errors when a custom `SCOPE` is configured.
+
 ---
 
 ## [0.2.1] - 2026-06-25
