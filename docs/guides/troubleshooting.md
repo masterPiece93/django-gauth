@@ -129,6 +129,28 @@ flowchart TD
 
 ---
 
+### PKCE / token-exchange failures on `django-gauth < 0.2.1`
+
+!!! warning "Pin `google-auth-oauthlib` if you use django-gauth < 0.2.1"
+    **Cause:** `google-auth-oauthlib >= 1.3.0` changed its **PKCE (Proof Key for
+    Code Exchange)** handling. Releases of **`django-gauth` older than `0.2.1`** do
+    **not** pin this dependency, so a fresh install can pull `>= 1.3.0` and break the
+    OAuth callback — the authorization request and token exchange disagree, causing
+    token-exchange failures.
+
+    **Fix (staying on an old version):** pin the dependency explicitly :material-pin:
+    in your Django project's requirements:
+
+    ```text
+    # requirements.txt
+    google-auth-oauthlib<1.3.0,>=1.0.0
+    ```
+
+    **Recommended fix:** upgrade to **`django-gauth >= 0.2.1`**, which already pins
+    `google-auth-oauthlib<1.3.0,>=1.0.0` for you — no manual pin needed.
+
+---
+
 ## Debugging Tips
 
 ### Enable Debug Endpoint

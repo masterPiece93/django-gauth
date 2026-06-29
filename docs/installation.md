@@ -63,6 +63,17 @@ graph TD
     - `google-auth-oauthlib` — Google's official OAuth2 library
     - `Django` — your web framework
 
+!!! warning "Using django-gauth < 0.2.1?"
+    Older releases do **not** pin `google-auth-oauthlib`. To avoid PKCE-related OAuth
+    failures, pin it explicitly :material-pin: in your project's requirements:
+
+    ```text
+    google-auth-oauthlib<1.3.0,>=1.0.0
+    ```
+
+    Versions **`0.2.1` and newer** include this pin automatically — just upgrade and
+    you're covered.
+
 ## Verify Installation
 
 After installing, confirm it's available:

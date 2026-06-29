@@ -12,6 +12,24 @@ All notable changes to this project are documented here.
 
 ---
 
+## v0.2.2
+
+:material-calendar: 2026-06-29
+
+### Fixed
+
+- **Callback scope mismatch** — `callback()` now uses `settings.SCOPE` instead of a hardcoded scope list, preventing "Scope has changed" errors when a custom `SCOPE` is configured.
+- **`client_secret` no longer stored in session** — `credentials_to_dict()` omits `client_id`/`client_secret`; they are re-injected from settings when rebuilding `Credentials`.
+- **Public `id_token` accessor** — reads `credentials.id_token` instead of the private `credentials._id_token`, avoiding breakage on future `google-auth` releases.
+- **Friendly state-mismatch handling** — `callback()` compares the returned `state` with the session value and returns a clear `400` instead of an opaque stack trace.
+- **Callback error-path handling** — provider errors (e.g. user clicks *Deny* → `?error=access_denied`) redirect gracefully instead of crashing.
+
+### Added
+
+- Repository hygiene files: `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, issue templates, and a pull request template.
+
+---
+
 ## v0.2.1
 
 :material-calendar: 2026-06-25

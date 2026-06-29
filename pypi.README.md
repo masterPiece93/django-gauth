@@ -42,6 +42,10 @@ minimal ceremony.
 | **GitHub** | ```pip install -e git+https://github.com/masterPiece93/django-gauth.git#egg=django_gauth```|
 | **PyPi**| ```pip install django-gauth``` |
 
+> 📌 **Compatibility note:** If you must stay on `django-gauth < 0.2.1`, pin
+> `google-auth-oauthlib<1.3.0,>=1.0.0` in your project requirements to avoid
+> PKCE-related OAuth failures. Higher Versions `0.2.1+` pin this for you, so no need to worry with them!
+
 ## Quickstart
 
 1. add the app name : `django_gauth` in **INSTALLED_APPS** entry of you project ( in settings.py file )

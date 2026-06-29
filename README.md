@@ -1,6 +1,6 @@
 # Google Auth <sup>[ Django ]<sup>
 
-![Dynamic TOML Badge](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FmasterPiece93%2Fdjango-gauth%2F6f550a6585b8f57d38e2182ae67cc89edeee296d%2Fpyproject.toml&query=%24.project.version&label=latest%20version&labelColor=black)
+![Dynamic TOML Badge](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FmasterPiece93%2Fdjango-gauth%2Frefs%2Fheads%2Fmain%2Fpyproject.toml&query=%24.project.version&logoColor=%23000000&label=latest%20version&labelColor=black)
  [![PyPI - Version](https://img.shields.io/pypi/v/django-gauth)](https://pypi.org/project/django-gauth) ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/django-gauth) ![PyPI - Versions from Framework Classifiers](https://img.shields.io/pypi/frameworkversions/django/django-gauth) ![PyPI - Status](https://img.shields.io/pypi/status/django-gauth) ![PyPI - License](https://img.shields.io/pypi/l/django-gauth)
   [![tests](https://github.com/masterPiece93/django-gauth/actions/workflows/tests.yml/badge.svg)](https://github.com/masterPiece93/django-gauth/actions/workflows/tests.yml) [![coverage](https://raw.githubusercontent.com/masterPiece93/django-gauth/badges/coverage.svg)](https://github.com/masterPiece93/django-gauth/actions/workflows/tests.yml) [![pages-build-deployment](https://github.com/masterPiece93/django-gauth/actions/workflows/pages/pages-build-deployment/badge.svg)](https://github.com/masterPiece93/django-gauth/actions/workflows/pages/pages-build-deployment)  [![Pylint](https://github.com/masterPiece93/django-gauth/actions/workflows/pylint.yml/badge.svg)](https://github.com/masterPiece93/django-gauth/actions/workflows/pylint.yml) [![Upload Python Package](https://github.com/masterPiece93/django-gauth/actions/workflows/release.yml/badge.svg)](https://github.com/masterPiece93/django-gauth/actions/workflows/release.yml) ![PyPI - Types](https://img.shields.io/pypi/types/django-gauth?color=pink)
 
@@ -38,6 +38,10 @@ from test PyPi
 ```sh
 pip install -i https://test.pypi.org/simple/ django-gauth
 ```
+
+> 📌 **Compatibility note:** If you must stay on `django-gauth < 0.2.1`, pin
+> `google-auth-oauthlib<1.3.0,>=1.0.0` in your project requirements to avoid
+> PKCE-related OAuth failures. Versions `0.2.1+` pin this for you.
 
 ## Quickstart
 
