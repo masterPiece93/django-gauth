@@ -197,5 +197,19 @@ sequenceDiagram
     B->>G: User clicks "Deny"
     G-->>B: 302 → /gauth/login-callback?error=access_denied
     B->>D: GET /gauth/login-callback?error=access_denied
-    D-->>B: Error handling
+    D-->>B: 302 → final redirect (graceful, no crash)
+```
+
+### State Mismatch (CSRF / expired / replayed link)
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant D as Django
+
+    B->>D: GET /gauth/login-callback?state=WRONG&code=...
+    D->>D: Compare state vs session
+    D-->>B: ❌ 400 Bad Request — "Invalid or missing OAuth state"
+
+    Note over B,D: Restart sign-in from /gauth/login/
 ```

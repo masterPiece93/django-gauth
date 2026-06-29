@@ -87,6 +87,19 @@ flowchart TD
 
 ---
 
+### `400 Bad Request` — "Invalid or missing OAuth state"
+
+!!! failure "Callback rejected before token exchange"
+    **Cause:** The `state` returned by Google didn't match the value stored in the session.
+    This usually means the session expired, cookies were cleared, the callback link was
+    replayed/bookmarked, or a possible CSRF attempt.
+
+    **Fix:** Start the flow again from `/gauth/login/`. Ensure cookies/sessions are enabled
+    and that the same browser/session completes the round-trip. This is expected, safe
+    behaviour — `django-gauth` returns a clear 400 instead of a raw oauthlib stack trace.
+
+---
+
 ### `oauthlib.oauth2.rfc6749.errors.InsecureTransportError`
 
 !!! failure "OAuth2 must use HTTPS"

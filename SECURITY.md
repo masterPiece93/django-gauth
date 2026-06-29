@@ -82,6 +82,9 @@ When using `django-gauth`, we strongly recommend:
   outside local development).
 - Keep `GOOGLE_CLIENT_SECRET` and other secrets out of version control (use environment
   variables or a secrets manager).
+- `django-gauth` never persists your `client_id`/`client_secret` in the session store —
+  they are re-injected from settings when rebuilding credentials — so use a secure session
+  backend and signed/HTTPS-only cookies for the tokens that are stored.
 - Keep `django-gauth`, Django, and `google-auth-oauthlib` up to date.
 - Review the [documentation](https://masterpiece93.github.io/django-gauth/) for secure
   configuration guidance.
