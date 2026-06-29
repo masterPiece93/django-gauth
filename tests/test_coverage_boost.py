@@ -769,3 +769,45 @@ class CallbackViewTest(TestCase):
         self.assertEqual(creds["token"], "my_access_token")
         self.assertEqual(creds["refresh_token"], "my_refresh_token")
         self.assertEqual(creds["scopes"], ["openid", "email"])
+
+    @override_settings(
+        SCOPE=[
+            "https://www.googleapis.com/auth/userinfo.email",
+            "openid",
+        ]
+    )
+    @patch("django_gauth.views.id_token.verify_oauth2_token")
+    @patch("django_gauth.views.Flow.from_client_config")
+    def test_callback_uses_settings_scope(self, mock_flow_class, mock_verify):
+        """ISSUE-1 regression: callback must use settings.SCOPE, not a hardcoded list.
+
+        Guards against the authorization request and token exchange diverging
+        (which produces confusing "Scope has changed" errors).
+        """
+        from django.contrib.sessions.backends.db import SessionStore
+        from django_gauth.views import callback
+
+        mock_flow_instance = MagicMock()
+        mock_flow_class.return_value = mock_flow_instance
+        mock_credentials = MagicMock()
+        mock_credentials.scopes = settings.SCOPE
+        mock_credentials._id_token = "id_tok"
+        mock_flow_instance.credentials = mock_credentials
+        mock_verify.return_value = {"email": "user@example.com", "exp": time.time() + 3600}
+
+        request = self.factory.get("/gauth/login-callback?state=s&code=c")
+        session = SessionStore()
+        session[settings.STATE_KEY_NAME] = "s"
+        session[settings.FINAL_REDIRECT_KEY_NAME] = "http://testserver/"
+        session.create()
+        request.session = session
+
+        callback(request)
+
+        # The scopes passed to Flow must match settings.SCOPE exactly
+        _, kwargs = mock_flow_class.call_args
+        self.assertEqual(kwargs["scopes"], settings.SCOPE)
+        # And must not contain the previously hardcoded drive scope
+        self.assertNotIn(
+            "https://www.googleapis.com/auth/drive", kwargs["scopes"]
+        )
