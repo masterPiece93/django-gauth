@@ -736,7 +736,7 @@ class CallbackViewTest(TestCase):
         mock_credentials.client_id = settings.GOOGLE_CLIENT_ID
         mock_credentials.client_secret = settings.GOOGLE_CLIENT_SECRET
         mock_credentials.scopes = ["openid"]
-        mock_credentials._id_token = "fake_id_token"
+        mock_credentials.id_token = "fake_id_token"
         mock_flow_instance.credentials = mock_credentials
 
         # Setup mock id_token verification
@@ -764,6 +764,9 @@ class CallbackViewTest(TestCase):
         # Verify session was populated
         self.assertIn("id_info", request.session)
         self.assertIn(settings.CREDENTIALS_SESSION_KEY_NAME, request.session)
+        # ISSUE-3 regression: callback must read the public ``id_token`` property,
+        # not the private ``_id_token`` attribute.
+        self.assertEqual(mock_verify.call_args.kwargs["id_token"], "fake_id_token")
 
     @patch("django_gauth.views.id_token.verify_oauth2_token")
     @patch("django_gauth.views.Flow.from_client_config")
@@ -781,7 +784,7 @@ class CallbackViewTest(TestCase):
         mock_credentials.client_id = settings.GOOGLE_CLIENT_ID
         mock_credentials.client_secret = settings.GOOGLE_CLIENT_SECRET
         mock_credentials.scopes = ["openid", "email"]
-        mock_credentials._id_token = "id_tok"
+        mock_credentials.id_token = "id_tok"
         mock_flow_instance.credentials = mock_credentials
 
         mock_verify.return_value = {
@@ -827,7 +830,7 @@ class CallbackViewTest(TestCase):
         mock_flow_class.return_value = mock_flow_instance
         mock_credentials = MagicMock()
         mock_credentials.scopes = settings.SCOPE
-        mock_credentials._id_token = "id_tok"
+        mock_credentials.id_token = "id_tok"
         mock_flow_instance.credentials = mock_credentials
         mock_verify.return_value = {
             "email": "user@example.com",

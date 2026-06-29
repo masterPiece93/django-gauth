@@ -169,7 +169,7 @@ def callback(request: HttpRequest):  # type: ignore
     credentials = flow.credentials
     # verify token, while also retrieving information about the user
     id_info = id_token.verify_oauth2_token(
-        id_token=credentials._id_token,  # pylint: disable=protected-access
+        id_token=credentials.id_token,
         request=requests.Request(),
         audience=settings.GOOGLE_CLIENT_ID,
         clock_skew_in_seconds=5,
