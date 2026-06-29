@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Security: the OAuth `client_secret` (and `client_id`) are no longer persisted in the
   session store. `credentials_to_dict()` omits them and `check_gauth_authentication()`
   re-injects them from settings when rebuilding `Credentials`.
+- Robustness: `callback()` now reads the public `credentials.id_token` property instead of
+  the private `credentials._id_token` attribute, avoiding breakage on future `google-auth`
+  releases.
 
 ---
 
