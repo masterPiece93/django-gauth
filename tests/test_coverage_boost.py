@@ -899,3 +899,38 @@ class CallbackViewTest(TestCase):
         response = callback(request)
         self.assertEqual(response.status_code, 400)
         mock_flow_class.assert_not_called()
+
+    @patch("django_gauth.views.Flow.from_client_config")
+    def test_callback_access_denied_redirects_gracefully(self, mock_flow_class):
+        """ISSUE-5: error=access_denied lands on the configured redirect, no crash."""
+        from django.contrib.sessions.backends.db import SessionStore
+        from django_gauth.views import callback
+
+        request = self.factory.get("/gauth/login-callback?error=access_denied&state=s")
+        session = SessionStore()
+        session[settings.STATE_KEY_NAME] = "s"
+        session[settings.FINAL_REDIRECT_KEY_NAME] = "http://testserver/home/"
+        session.create()
+        request.session = session
+
+        response = callback(request)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, "http://testserver/home/")
+        # the OAuth flow must not be touched when the user cancelled
+        mock_flow_class.assert_not_called()
+
+    @patch("django_gauth.views.Flow.from_client_config")
+    def test_callback_error_without_redirect_falls_back_to_index(self, mock_flow_class):
+        """ISSUE-5: with no stored redirect, errors land on the package index."""
+        from django.contrib.sessions.backends.db import SessionStore
+        from django_gauth.views import callback
+
+        request = self.factory.get("/gauth/login-callback?error=server_error")
+        session = SessionStore()
+        session.create()
+        request.session = session
+
+        response = callback(request)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/gauth", response.url)
+        mock_flow_class.assert_not_called()

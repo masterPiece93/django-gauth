@@ -34,6 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with the session value and returns a clear `400` (instead of an opaque oauthlib stack
   trace) when it is missing or mismatched — guarding against CSRF, expired sessions, and
   replayed callback links.
+- Callback error-path handling: `callback()` now detects provider errors (e.g. the user
+  clicking *Deny* → `?error=access_denied`) and redirects gracefully to the configured
+  landing page instead of crashing on a missing authorization `code`.
 
 ---
 

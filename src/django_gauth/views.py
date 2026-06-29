@@ -151,6 +151,14 @@ def callback(request: HttpRequest):  # type: ignore
     # pull the state from the session
     session_state = request.session.get(settings.STATE_KEY_NAME)
 
+    # ISSUE-5: handle provider-reported errors before assuming success. When the
+    # user clicks "Deny" (or consent fails) Google redirects back with
+    # ?error=access_denied and no code, so attempting a token exchange would
+    # crash. Route to a graceful landing page instead.
+    if request.GET.get("error"):
+        fallback = request.session.get(settings.FINAL_REDIRECT_KEY_NAME)
+        return redirect(fallback or reverse("django_gauth:index"))
+
     # ISSUE-4: explicitly verify the returned state matches the one we stored at
     # login. Defends against CSRF, expired sessions, and replayed callback links
     # by surfacing a clear error instead of a raw oauthlib stack trace.
