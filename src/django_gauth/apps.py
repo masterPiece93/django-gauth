@@ -17,6 +17,17 @@ from django_gauth._checks import (
     check_project_settings,
     formulate_check_id,
 )
+from urllib.parse import urlparse
+
+def is_url(url_string):
+    """Check if a string is a valid URL.
+    [utility function]"""
+    try:
+        result = urlparse(url_string)
+        # Returns True if both scheme (e.g., http) and netloc (e.g., github.com) exist
+        return all([result.scheme, result.netloc])
+    except ValueError:
+        return False
 
 warnings.simplefilter("default")
 
@@ -76,7 +87,7 @@ def set_defaults(app_configs: object, **kwargs: Any) -> list:  # pylint: disable
         )
         warnings.warn(_msg)
     else:
-        if not settings.GOOGLE_AUTH_FINAL_REDIRECT_URL:
+        if settings.GOOGLE_AUTH_FINAL_REDIRECT_URL and (not len(settings.GOOGLE_AUTH_FINAL_REDIRECT_URL) > 0 or not is_url(settings.GOOGLE_AUTH_FINAL_REDIRECT_URL)):
             _msg = (
                 "GOOGLE_AUTH_FINAL_REDIRECT_URL setting is set to"
                 + f"`{settings.GOOGLE_AUTH_FINAL_REDIRECT_URL}` which is logically incorrect."
@@ -122,14 +133,14 @@ def set_defaults(app_configs: object, **kwargs: Any) -> list:  # pylint: disable
         setattr(settings, "FINAL_REDIRECT_KEY_NAME", defaults.FINAL_REDIRECT_KEY_NAME)
         _msg = (
             "FINAL_REDIRECT_KEY_NAME settings is not defined."
-            + "Defaulting to `{defaults.FINAL_REDIRECT_KEY_NAME}`"
+            + f"Defaulting to `{defaults.FINAL_REDIRECT_KEY_NAME}`"
         )
         warnings.warn(_msg)
     else:
         if not settings.FINAL_REDIRECT_KEY_NAME:
             _msg = (
                 "FINAL_REDIRECT_KEY_NAME setting is set to"
-                + "`{settings.FINAL_REDIRECT_KEY_NAME}` which is logically incorrect."
+                + f"`{settings.FINAL_REDIRECT_KEY_NAME}` which is logically incorrect."
             )
             info = Info(_msg)
             errors.append(info)
