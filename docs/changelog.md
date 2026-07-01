@@ -14,6 +14,19 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+### Added
+
+- **Redirection Schemes (issue #77)** — nested & dynamic Google auth out of the box.
+  `login()` accepts a `?scheme=` query parameter (`PRESERVE_ORIGIN_QP`,
+  `PRESERVE_ORIGIN_HP`, `LANDING_PAGE`, `DEFAULT`) that sends users back to the exact
+  page they authenticated from. Origins are same-origin validated to prevent
+  open-redirect attacks. See
+  [Redirection Schemes](concepts/redirection-schemes.md).
+- **Configurable `login()` response type** — a `?response=` parameter selects `redirect`
+  (default `302`) or `json` (`{"redirect_to": ...}`) delivery of the authorization URL.
+  The JSON form lets an SPA drive the top-level navigation itself, and is required for the
+  `PRESERVE_ORIGIN_HP` scheme.
+
 ### Security
 
 - **`oauth_state` cleared after successful auth** — `callback()` now explicitly removes

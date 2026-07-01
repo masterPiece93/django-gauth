@@ -42,6 +42,15 @@ tags:
 
     [:octicons-arrow-right-24: UI Customization](configuration/ui-customization.md)
 
+-   :material-transit-connection-variant:{ .lg .middle } **Nested & Dynamic Auth**
+
+    ---
+
+    Sign users in from *anywhere* in your app and send them **right back to where
+    they started** — in the same state. Origin-preserving redirection, built in.
+
+    [:octicons-arrow-right-24: Redirection Schemes](concepts/redirection-schemes.md)
+
 </div>
 
 ---
@@ -65,6 +74,7 @@ graph LR
 | Setup time | ~5 min | ~2 days |
 | Built-in landing page | :white_check_mark: | :x: |
 | Session management | :white_check_mark: | Manual |
+| Nested & dynamic auth (return-to-origin) | :white_check_mark: | Manual & error-prone |
 | System checks on startup | :white_check_mark: | :x: |
 | Debug endpoint | :white_check_mark: | :x: |
 | Type hints | :white_check_mark: | Varies |

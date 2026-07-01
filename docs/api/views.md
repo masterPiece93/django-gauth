@@ -43,13 +43,29 @@ Initiates the Google OAuth2 flow.
 | **URL** | `/gauth/login/` |
 | **Method** | `GET` |
 | **URL Name** | `django_gauth:login` |
-| **Response** | `302 Redirect` to Google |
+| **Response** | `302 Redirect` to Google · or `JsonResponse` when `response=json` · `400 Bad Request` on an invalid `scheme`/`response` |
 
 **Query Parameters:**
 
 | Param | Optional | Description |
 |-------|:--------:|-------------|
-| `origin_url` | ✅ | URL to redirect to after auth (same-origin only) |
+| `scheme` | ✅ | Redirection scheme — how the post-auth destination is resolved. One of `PRESERVE_ORIGIN_QP`, `PRESERVE_ORIGIN_HP`, `LANDING_PAGE`, `DEFAULT` (default: `DEFAULT` → `LANDING_PAGE`) |
+| `response` | ✅ | How the authorization URL is delivered: `redirect` (default, `302`) or `json` (`{"redirect_to": ...}`) |
+| `origin_url` | ✅ | Post-auth destination for the `PRESERVE_ORIGIN_QP` scheme (same-origin only) |
+
+!!! tip "Bring users back to where they started"
+    The `scheme` parameter powers **nested & dynamic auth** — sending users back
+    to the exact page they authenticated from. See
+    [Redirection Schemes](../concepts/redirection-schemes.md) for the full
+    concept, an SPA/React guide, and why the header scheme returns JSON.
+
+**Origin sources by scheme:**
+
+| Scheme | Origin comes from | Response |
+|--------|-------------------|:--------:|
+| `PRESERVE_ORIGIN_QP` | `?origin_url=` query parameter | `302` or `json` |
+| `PRESERVE_ORIGIN_HP` | `X-ORIGIN-URL` request header | **`json`** (required) |
+| `LANDING_PAGE` / `DEFAULT` | `GOOGLE_AUTH_FINAL_REDIRECT_URL` (or the index) | `302` or `json` |
 
 **Behaviour controlled by settings:**
 
@@ -57,17 +73,28 @@ Initiates the Google OAuth2 flow.
 |---------|-------------------|
 | `SCOPE` | OAuth2 scopes passed to the authorization URL |
 | `GOOGLE_LOGIN_PROMPT` | `prompt=` value sent to Google — controls account picker / consent screen behaviour (default: `"select_account consent"`) |
-| `GOOGLE_AUTH_FINAL_REDIRECT_URL` | Where to redirect on successful auth when no `origin_url` is provided |
+| `GOOGLE_AUTH_FINAL_REDIRECT_URL` | Landing destination for `LANDING_PAGE`/`DEFAULT`, and the fallback when an origin is missing or fails same-origin validation |
 
 **What it does:**
 
 ```mermaid
 flowchart LR
-    A[Validate origin_url] --> B[Create OAuth Flow]
-    B --> C[Generate auth URL + state]
-    C --> D[Store state in session]
-    D --> E[302 → Google]
+    A[Parse scheme + response] --> B{Valid?}
+    B -->|no| X[400 Bad Request]
+    B -->|yes| C[Resolve origin for scheme]
+    C --> D[Create OAuth Flow]
+    D --> E[Generate auth URL + state]
+    E --> F[Store state + final redirect in session]
+    F --> G{response=json?}
+    G -->|yes| H[JsonResponse redirect_to]
+    G -->|no| I[302 → Google]
 ```
+
+!!! warning "`PRESERVE_ORIGIN_HP` requires `response=json`"
+    The `X-ORIGIN-URL` header can only be set from JavaScript (`fetch`/`axios`),
+    and a `fetch` cannot land on Google's consent screen. Always pair the header
+    scheme with `response=json` and navigate from the client. Full explanation:
+    [Why does the header scheme return JSON?](../concepts/redirection-schemes.md#why-does-the-header-scheme-return-json)
 
 ---
 
@@ -133,9 +160,10 @@ Returns sanitized session data as JSON. **Only available when `DEBUG=True`.**
 
 ---
 
-## `get_origin_url(request)`
+## `get_origin_url(request, retrieve_from="query", retrieve_key="origin_url")`
 
-Internal helper — validates and extracts the `origin_url` query parameter.
+Internal helper — extracts and validates the origin URL that powers the
+`PRESERVE_ORIGIN_*` schemes.
 
 | Property | Value |
 |----------|-------|
@@ -143,5 +171,13 @@ Internal helper — validates and extracts the `origin_url` query parameter.
 | **First element** | The decoded origin URL (or `None`) |
 | **Second element** | Whether it's a valid same-origin URL |
 
+**Parameters:**
+
+| Param | Default | Description |
+|-------|---------|-------------|
+| `retrieve_from` | `"query"` | Where to read the origin from — `"query"` or `"header"`. Any other value raises `ValueError`. |
+| `retrieve_key` | `"origin_url"` | The query-parameter name (or header name) to read. |
+
 !!! info "Same-origin validation"
-    Only URLs with matching `scheme` and `netloc` are considered valid.
+    Only URLs with matching `scheme` and `netloc` are considered valid. This is
+    what protects the `PRESERVE_ORIGIN_*` schemes from open-redirect abuse.
