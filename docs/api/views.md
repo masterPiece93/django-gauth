@@ -51,6 +51,14 @@ Initiates the Google OAuth2 flow.
 |-------|:--------:|-------------|
 | `origin_url` | ✅ | URL to redirect to after auth (same-origin only) |
 
+**Behaviour controlled by settings:**
+
+| Setting | Effect on this view |
+|---------|-------------------|
+| `SCOPE` | OAuth2 scopes passed to the authorization URL |
+| `GOOGLE_LOGIN_PROMPT` | `prompt=` value sent to Google — controls account picker / consent screen behaviour (default: `"select_account consent"`) |
+| `GOOGLE_AUTH_FINAL_REDIRECT_URL` | Where to redirect on successful auth when no `origin_url` is provided |
+
 **What it does:**
 
 ```mermaid

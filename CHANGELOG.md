@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   advising users on `django-gauth < 0.2.1` to pin `google-auth-oauthlib<1.3.0,>=1.0.0`
   to avoid PKCE-related OAuth failures (issue #54).
 
+### Added
+
+- `GOOGLE_LOGIN_PROMPT` setting — the Google consent screen `prompt` parameter is now
+  configurable. Default value: `"select_account consent"`. Accepted values:
+  `select_account`, `consent`, `select_account consent`, `none`.
+
 ## [0.2.2] - 2026-06-29
 
 ### Added
