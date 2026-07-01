@@ -12,6 +12,26 @@ All notable changes to this project are documented here.
 
 ---
 
+## Unreleased
+
+### Security
+
+- **`oauth_state` cleared after successful auth** — `callback()` now explicitly removes
+  the OAuth2 CSRF nonce from the session once authentication completes. It is a
+  single-use token and has no purpose after the token exchange; clearing it prevents
+  stale CSRF material from persisting in the authenticated session. Error paths
+  (state-mismatch `400`, `access_denied` redirect) intentionally retain it to allow retry.
+
+### Changed
+
+- **`GOOGLE_AUTH_FINAL_REDIRECT_URL` validation** — The startup system check now uses URL
+  parsing to validate the configured value. A non-empty string that lacks a scheme or host
+  (e.g. a bare relative path like `"/dashboard/"`) produces an `Info`-level system check
+  entry. Empty string and `None` are silently treated as "not configured". Use a
+  fully-qualified URL (`https://myapp.example.com/dashboard/`) to keep system checks clean.
+
+---
+
 ## v0.2.2
 
 :material-calendar: 2026-06-29

@@ -100,7 +100,8 @@ flowchart LR
     B -->|ok| C[Exchange code for tokens]
     C --> D[Verify ID token]
     D --> E[Store credentials in session]
-    E --> F[302 → final redirect]
+    E --> G[Clear oauth_state from session]
+    G --> F[302 → final redirect]
 ```
 
 !!! tip "Graceful error handling"
@@ -126,7 +127,9 @@ Returns sanitized session data as JSON. **Only available when `DEBUG=True`.**
 - `id_info`: Removes `iss`, `azp`, `aud`, `sub`
 - `credentials`: Shows token/refresh-token existence and scopes only (no raw tokens; the
   `client_id`/`client_secret` are not persisted at all)
-- `oauth_state`: Completely removed
+- `oauth_state`: Stripped from the response — normally already absent because `callback()`
+  removes it from the session on the success path; this strip is a safety net for any
+  session that reached `debug_information()` via an unauthenticated or partial flow
 
 ---
 

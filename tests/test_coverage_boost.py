@@ -43,6 +43,7 @@ class DefaultsTest(TestCase):
         self.assertEqual(defaults.CREDENTIALS_SESSION_KEY_NAME, "credentials")
         self.assertEqual(defaults.STATE_KEY_NAME, "oauth_state")
         self.assertEqual(defaults.FINAL_REDIRECT_KEY_NAME, "final_redirect")
+        self.assertEqual(defaults.GOOGLE_LOGIN_PROMPT, "select_account consent")
 
 
 # ============================================================
@@ -156,9 +157,25 @@ class SetDefaultsTest(TestCase):
 
     @override_settings(GOOGLE_AUTH_FINAL_REDIRECT_URL="")
     def test_google_auth_final_redirect_url_empty(self):
-        """Info error when GOOGLE_AUTH_FINAL_REDIRECT_URL is falsy"""
+        """No error when GOOGLE_AUTH_FINAL_REDIRECT_URL is an empty string.
+
+        The enhancement only flags values that are explicitly set to a
+        non-empty string that is not a valid URL.  An empty string is treated
+        as 'not configured' and does not produce an Info entry.
+        """
         errors = self._call_set_defaults()
-        # Should produce an Info
+        redirect_infos = [
+            e
+            for e in errors
+            if hasattr(e, "msg") and "GOOGLE_AUTH_FINAL_REDIRECT_URL" in str(e.msg)
+        ]
+        self.assertEqual(redirect_infos, [])
+
+    @override_settings(GOOGLE_AUTH_FINAL_REDIRECT_URL="not-a-valid-url")
+    def test_google_auth_final_redirect_url_invalid_value(self):
+        """Info error when GOOGLE_AUTH_FINAL_REDIRECT_URL is set to a
+        non-empty string that is not a valid URL."""
+        errors = self._call_set_defaults()
         self.assertTrue(len(errors) >= 1)
 
     @override_settings(GOOGLE_AUTH_FINAL_REDIRECT_URL="http://example.com")
@@ -218,6 +235,75 @@ class SetDefaultsTest(TestCase):
         """Info when FINAL_REDIRECT_KEY_NAME is falsy"""
         errors = self._call_set_defaults()
         self.assertTrue(len(errors) >= 1)
+
+    @override_settings()
+    def test_google_login_prompt_not_defined(self):
+        """Sets default when GOOGLE_LOGIN_PROMPT is absent."""
+        if hasattr(settings, "GOOGLE_LOGIN_PROMPT"):
+            del settings.GOOGLE_LOGIN_PROMPT
+        self._call_set_defaults()
+        self.assertEqual(settings.GOOGLE_LOGIN_PROMPT, defaults.GOOGLE_LOGIN_PROMPT)
+
+    @override_settings(GOOGLE_LOGIN_PROMPT="")
+    def test_google_login_prompt_empty(self):
+        """Info error when GOOGLE_LOGIN_PROMPT is set to an empty string."""
+        errors = self._call_set_defaults()
+        self.assertTrue(len(errors) >= 1)
+
+
+# ============================================================
+# apps.py — is_url helper
+# ============================================================
+class IsUrlTest(TestCase):
+    """Cover apps.is_url including the ValueError exception path."""
+
+    def _is_url(self, value):
+        from django_gauth.apps import is_url
+
+        return is_url(value)
+
+    def test_valid_url_returns_true(self):
+        self.assertTrue(self._is_url("https://example.com/path"))
+
+    def test_no_scheme_returns_false(self):
+        self.assertFalse(self._is_url("example.com"))
+
+    def test_empty_string_returns_false(self):
+        self.assertFalse(self._is_url(""))
+
+    @patch("django_gauth.apps.urlparse")
+    def test_urlparse_value_error_returns_false(self, mock_urlparse):
+        """except ValueError branch — urlparse raises → is_url returns False."""
+        mock_urlparse.side_effect = ValueError("bad url")
+        self.assertFalse(self._is_url("anything"))
+
+
+# ============================================================
+# urls.py — conditional debug endpoint
+# ============================================================
+class UrlsConfigTest(TestCase):
+    """Cover urls.py conditional debug endpoint registration (line 18)."""
+
+    def test_debug_url_registered_when_debug_is_true(self):
+        """urlpatterns.append(debug path) is reached when DEBUG=True.
+
+        Django's TestRunner forces DEBUG=False before tests run, so the
+        module-level ``if settings.DEBUG:`` block never fires during a normal
+        import.  We reload the module inside an override_settings(DEBUG=True)
+        context to cover that branch, then reload again afterward to restore
+        the module to its test-runner state.
+        """
+        import importlib
+
+        import django_gauth.urls as gauth_urls
+
+        with override_settings(DEBUG=True):
+            importlib.reload(gauth_urls)
+            url_names = [p.name for p in gauth_urls.urlpatterns]
+            self.assertIn("debug", url_names)
+
+        # Restore the module to its correct test-runner state (DEBUG=False)
+        importlib.reload(gauth_urls)
 
 
 # ============================================================
@@ -396,6 +482,12 @@ class IsValidGoogleUrlTest(TestCase):
 
     def test_no_scheme(self):
         self.assertFalse(is_valid_google_url("docs.google.com/document"))
+
+    @patch("django_gauth.utilities.urlparse")
+    def test_urlparse_value_error_returns_false(self, mock_urlparse):
+        """except ValueError branch — urlparse raises → is_valid_google_url returns False."""
+        mock_urlparse.side_effect = ValueError("bad url")
+        self.assertFalse(is_valid_google_url("anything"))
 
 
 # ============================================================
@@ -807,6 +899,8 @@ class CallbackViewTest(TestCase):
         # ISSUE-2: client secret must never be persisted in the session
         self.assertNotIn("client_secret", creds)
         self.assertNotIn("client_id", creds)
+        # oauth_state must be removed on successful auth (single-use CSRF nonce)
+        self.assertNotIn(settings.STATE_KEY_NAME, request.session)
 
     @override_settings(
         SCOPE=[
@@ -933,3 +1027,42 @@ class CallbackViewTest(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertIn("/gauth", response.url)
         mock_flow_class.assert_not_called()
+
+    @patch("django_gauth.views.id_token.verify_oauth2_token")
+    @patch("django_gauth.views.Flow.from_client_config")
+    def test_callback_clears_oauth_state_after_success(
+        self, mock_flow_class, mock_verify
+    ):
+        """oauth_state is a single-use CSRF nonce; it must be removed from the
+        session once authentication completes so it cannot linger post-auth."""
+        from django.contrib.sessions.backends.db import SessionStore
+        from django_gauth.views import callback
+
+        mock_flow_instance = MagicMock()
+        mock_flow_class.return_value = mock_flow_instance
+        mock_credentials = MagicMock()
+        mock_credentials.token = "tok"
+        mock_credentials.refresh_token = "rtok"
+        mock_credentials.token_uri = "https://oauth2.googleapis.com/token"
+        mock_credentials.scopes = ["openid"]
+        mock_credentials.id_token = "id_tok"
+        mock_flow_instance.credentials = mock_credentials
+        mock_verify.return_value = {"email": "u@example.com", "exp": time.time() + 3600}
+
+        request = self.factory.get("/gauth/login-callback?state=s&code=c")
+        session = SessionStore()
+        session[settings.STATE_KEY_NAME] = "s"
+        session[settings.FINAL_REDIRECT_KEY_NAME] = "http://testserver/"
+        session.create()
+        request.session = session
+
+        # state exists before the callback
+        self.assertIn(settings.STATE_KEY_NAME, request.session)
+
+        callback(request)
+
+        # state must be gone after successful auth
+        self.assertNotIn(settings.STATE_KEY_NAME, request.session)
+        # credentials and id_info must still be present
+        self.assertIn(settings.CREDENTIALS_SESSION_KEY_NAME, request.session)
+        self.assertIn("id_info", request.session)
