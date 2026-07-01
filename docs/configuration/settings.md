@@ -98,6 +98,40 @@ All settings are defined in your Django project's `settings.py`.
 
     **Type:** `str` · **Default:** `"oauth_state"`
 
+### `GOOGLE_LOGIN_PROMPT`
+
+:   Controls the Google consent screen behaviour passed as the `prompt` parameter
+    to Google's authorization endpoint.
+
+    ```python
+    # Default — always show account picker AND re-confirm consent
+    GOOGLE_LOGIN_PROMPT = "select_account consent"
+
+    # Show account picker only (re-consent on scope change only)
+    GOOGLE_LOGIN_PROMPT = "select_account"
+
+    # Force consent page every time (useful when testing scopes)
+    GOOGLE_LOGIN_PROMPT = "consent"
+
+    # No prompt — silently use existing session (SSO-style)
+    GOOGLE_LOGIN_PROMPT = "none"
+    ```
+
+    **Type:** `str` · **Default:** `"select_account consent"`
+
+    !!! info "Accepted values"
+        | Value | Behaviour |
+        |-------|-----------|
+        | `select_account` | Force account selection even if one session exists |
+        | `consent` | Force the consent screen every time |
+        | `select_account consent` | Both — recommended default |
+        | `none` | No UI shown; fails if interaction is required |
+
+    !!! tip "When to change this"
+        - Set to `"select_account"` if users have only one account and re-confirming
+          consent on every login is intrusive.
+        - Set to `"none"` for silent SSO flows where the user has previously consented.
+
 ### `DJANGO_GAUTH_UI_CONFIG`
 
 :   Customize the appearance of the built-in landing page.
@@ -145,6 +179,7 @@ All settings are defined in your Django project's `settings.py`.
 | `GOOGLE_AUTH_FINAL_REDIRECT_URL` | ❌ | `str\|None` | `None` |
 | `CREDENTIALS_SESSION_KEY_NAME` | ❌ | `str` | `"credentials"` |
 | `STATE_KEY_NAME` | ❌ | `str` | `"oauth_state"` |
+| `GOOGLE_LOGIN_PROMPT` | ❌ | `str` | `"select_account consent"` |
 | `DJANGO_GAUTH_UI_CONFIG` | ❌ | `dict` | Not set |
 
 ---
