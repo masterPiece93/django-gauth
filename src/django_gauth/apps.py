@@ -1,5 +1,6 @@
 import warnings
 from typing import Any
+from urllib.parse import urlparse
 
 from django.apps import AppConfig  # pylint: disable=E0401
 
@@ -17,7 +18,6 @@ from django_gauth._checks import (
     check_project_settings,
     formulate_check_id,
 )
-from urllib.parse import urlparse
 
 
 def is_url(url_string):
