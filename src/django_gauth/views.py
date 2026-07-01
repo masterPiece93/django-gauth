@@ -201,6 +201,10 @@ def callback(request: HttpRequest):  # type: ignore
     request.session[settings.CREDENTIALS_SESSION_KEY_NAME] = credentials_to_dict(
         credentials
     )
+    # oauth_state is a single-use CSRF nonce — remove it now that auth is
+    # complete so it doesn't linger in the authenticated session.
+    request.session.pop(settings.STATE_KEY_NAME, None)
+
     # redirecting to the final redirect (i.e., logged in page)
     redirect_response = redirect(request.session[settings.FINAL_REDIRECT_KEY_NAME])
 
@@ -239,6 +243,7 @@ def debug_information(request: HttpRequest):  # type: ignore
         if "scopes" in value:
             session_data["debug"]["credentials_info"]["scopes"] = value["scopes"]
     # sanitizing `oauth_state`
+    # (already removed from session on successful auth, guarded here for safety)
     if "oauth_state" in session_data:
         session_data.pop("oauth_state")
     return JsonResponse({"session": session_data})

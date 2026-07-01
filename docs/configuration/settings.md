@@ -66,17 +66,27 @@ All settings are defined in your Django project's `settings.py`.
 
 ### `GOOGLE_AUTH_FINAL_REDIRECT_URL`
 
-:   Where to redirect after successful authentication.
+:   Where to redirect after successful authentication. Must be a fully-qualified URL
+    when set to a non-empty value.
 
     ```python
-    # Redirect to your app's dashboard
-    GOOGLE_AUTH_FINAL_REDIRECT_URL = "/dashboard/"
+    # Development
+    GOOGLE_AUTH_FINAL_REDIRECT_URL = "http://127.0.0.1:8000/dashboard/"
 
-    # Or use None to go back to /gauth/ landing page
+    # Production
+    GOOGLE_AUTH_FINAL_REDIRECT_URL = "https://myapp.example.com/dashboard/"
+
+    # Or omit / set to None to fall back to the /gauth/ landing page
     GOOGLE_AUTH_FINAL_REDIRECT_URL = None
     ```
 
     **Type:** `Optional[str]` · **Default:** `None` (redirects to `/gauth/`)
+
+    !!! warning "URL format validated at startup"
+        Django Gauth validates this setting using URL parsing (both `scheme` and `host`
+        must be present). A non-empty value without a scheme or host — such as a bare
+        relative path like `"/dashboard/"` — produces an `Info`-level system check
+        entry. `None` and empty string `""` are silently treated as "not configured".
 
 ### `CREDENTIALS_SESSION_KEY_NAME`
 

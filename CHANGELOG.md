@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- `oauth_state` (OAuth2 CSRF nonce) is now explicitly removed from the session on the
+  success path of `callback()`. It is a single-use token — once `fetch_token()` completes
+  it has no further purpose, and clearing it prevents stale CSRF material from lingering
+  in the authenticated session. Error paths (`400` state-mismatch, `access_denied` redirect)
+  intentionally retain it to allow the user to retry.
+
 ### Documentation
 
 - Added a compatibility warning (installation, troubleshooting, README, and PyPI readme)
@@ -24,6 +32,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `GOOGLE_LOGIN_PROMPT` setting — the Google consent screen `prompt` parameter is now
   configurable. Default value: `"select_account consent"`. Accepted values:
   `select_account`, `consent`, `select_account consent`, `none`.
+
+### Changed
+
+- `GOOGLE_AUTH_FINAL_REDIRECT_URL` system check now validates URL format using URL
+  parsing: a non-empty value that lacks a scheme or host (e.g. a bare relative path
+  like `"/dashboard/"`) produces an `Info`-level system check entry. Empty string and
+  `None` are silently treated as "not configured" and produce no entry. Previously any
+  falsy value — including `""` — triggered the check.
 
 ## [0.2.2] - 2026-06-29
 
