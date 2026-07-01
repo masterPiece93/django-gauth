@@ -20,7 +20,7 @@ from django_gauth._checks import (
 )
 
 
-def is_url(url_string):
+def is_url(url_string: str) -> bool:
     """Check if a string is a valid URL.
     [utility function]"""
     try:
