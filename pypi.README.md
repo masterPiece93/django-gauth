@@ -25,6 +25,7 @@ configuration, just the Google flow, clearly documented.
 | --- | :---: | :---: | :---: |
 | Setup for *just Google* | ⚡ Minimal (3 settings + 1 URL include) | 🧩 Broad, multi-step config | 🛠️ Manual OAuth wiring |
 | Built-in login page | ✅ Ships a landing page | ➖ Bring your own templates | ❌ Build it yourself |
+| Nested & dynamic auth (return-to-origin) | ✅ Built-in schemes | ➖ DIY | ❌ DIY |
 | Scope | 🎯 Google OAuth2 only | 🌐 Many providers | 🎯 Whatever you build |
 | Learning curve | 📉 Low | 📈 Higher (large surface) | ⚠️ Easy to get OAuth subtly wrong |
 | Typed & tested | ✅ Type hints + ~99% coverage | ✅ Mature | ➖ Up to you |
@@ -32,6 +33,22 @@ configuration, just the Google flow, clearly documented.
 **Reach for `django-allauth`** when you need many providers, account linking, and email
 workflows. **Reach for `django-gauth`** when you want Google sign-in working *today* with
 minimal ceremony.
+
+## ✨ Standout feature — Nested & Dynamic Auth
+
+Modern UIs place the *"Sign in with Google"* button **inline** — inside modals, deep within a
+workflow, or when a session expires mid-task. `django-gauth` brings users **back to the exact
+page (and state) they authenticated from**, out of the box — no more dumping them on a generic
+dashboard.
+
+- 🎯 **Return-to-origin redirection** — send users straight back to where they started.
+- 🧩 **SPA-ready** — first-class support for React/Vue via query-parameter *or* header schemes
+  (`PRESERVE_ORIGIN_QP` / `PRESERVE_ORIGIN_HP`), with `redirect` or `json` responses.
+- 🔒 **Safe by default** — origins are same-origin validated to block open-redirect attacks.
+
+> 📌 **Availability:** This feature is available in `django-gauth >= 0.3.0`.
+
+👉 **[Read about Redirection Schemes →](https://masterpiece93.github.io/django-gauth/concepts/redirection-schemes/)**
 
 ## Installation
 

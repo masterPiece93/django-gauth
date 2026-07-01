@@ -8,6 +8,21 @@
 
 * [Official Documentation](https://masterpiece93.github.io/django-gauth/)
 
+## ✨ Feature Spotlight — Nested & Dynamic Auth
+
+Modern UIs place the *"Sign in with Google"* button **inline** — inside modals, deep within a
+workflow, or when a session expires mid-task. `django-gauth` brings users **back to the exact
+page (and state) they authenticated from**, out of the box — instead of dumping them on a
+generic dashboard.
+
+- 🎯 **Return-to-origin redirection** — nested & dynamic Google authentication from anywhere in your app.
+- 🧩 **SPA-ready (React/Vue)** — query-parameter *or* header schemes (`PRESERVE_ORIGIN_QP` / `PRESERVE_ORIGIN_HP`) with `redirect` or `json` responses.
+- 🔒 **Safe by default** — origins are same-origin validated to block open-redirect attacks.
+
+> � **Availability:** This feature is available in `django-gauth >= 0.3.0`.
+
+> �👉 **Learn more:** [Redirection Schemes](https://masterpiece93.github.io/django-gauth/concepts/redirection-schemes/)
+
 ## Developer Zone
 
 > [Developer README](./dev.README.md)

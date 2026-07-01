@@ -29,6 +29,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Redirection Schemes (issue #77)** — nested & dynamic Google auth, out of the box.
+  `login()` now accepts a `?scheme=` query parameter that controls how the post-auth
+  destination is resolved, so users can be sent back to the exact page they
+  authenticated from:
+    - `PRESERVE_ORIGIN_QP` — origin read from the `origin_url` query parameter.
+    - `PRESERVE_ORIGIN_HP` — origin read from the `X-ORIGIN-URL` request header.
+    - `LANDING_PAGE` — uses `GOOGLE_AUTH_FINAL_REDIRECT_URL` (or the package index).
+    - `DEFAULT` — alias for `LANDING_PAGE` (used when no `scheme` is supplied).
+
+  Origin URLs are validated as **same-origin** to prevent open-redirect attacks;
+  cross-origin or malformed values fall back to the landing page. A new
+  `RedirectionScheme` enum is exported from `django_gauth.utilities`.
+- **Configurable response type for `login()`** — a new `?response=` query parameter
+  selects how the Google authorization URL is delivered: `redirect` (default, a `302`)
+  or `json` (a `JsonResponse` of `{"redirect_to": ...}`). The JSON form lets a
+  Single-Page Application drive the top-level navigation itself, which is **required**
+  for the `PRESERVE_ORIGIN_HP` scheme (a custom header can only be sent via `fetch`, and
+  a `fetch` cannot land on Google's consent screen). Invalid `scheme`/`response` values
+  return a clear `400`.
 - `GOOGLE_LOGIN_PROMPT` setting — the Google consent screen `prompt` parameter is now
   configurable. Default value: `"select_account consent"`. Accepted values:
   `select_account`, `consent`, `select_account consent`, `none`.

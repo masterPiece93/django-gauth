@@ -1,3 +1,4 @@
+import enum
 import time
 from typing import Any, Dict, Tuple, Union
 from urllib.parse import urlparse
@@ -10,7 +11,30 @@ __all__ = [
     "has_epoch_time_passed",
     "check_gauth_authentication",
     "is_valid_google_url",
+    "RedirectionScheme",
 ]
+
+
+class RedirectionScheme(str, enum.Enum):
+    """Redirection Scheme Options.
+
+    Determines how the login endpoint resolves the final redirect URL
+    and what type of HTTP response is returned to the caller.
+
+    Options:
+        PRESERVE_ORIGIN_QP: Read origin URL from the ``origin_url`` query
+            parameter. Returns a 302 redirect to Google.
+        PRESERVE_ORIGIN_HP: Read origin URL from the ``X-ORIGIN-URL`` request
+            header. Returns a JsonResponse containing ``redirect_to``.
+        LANDING_PAGE: Use the configured ``GOOGLE_AUTH_FINAL_REDIRECT_URL``
+            (or the package index). Returns a 302 redirect to Google.
+        DEFAULT: Alias for LANDING_PAGE.
+    """
+
+    PRESERVE_ORIGIN_QP = "PRESERVE_ORIGIN_QP"
+    PRESERVE_ORIGIN_HP = "PRESERVE_ORIGIN_HP"
+    LANDING_PAGE = "LANDING_PAGE"
+    DEFAULT = "LANDING_PAGE"  # LANDING_PAGE is the default scheme
 
 
 def credentials_to_dict(credentials: Credentials) -> Dict[str, Any]:

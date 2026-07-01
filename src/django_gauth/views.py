@@ -19,14 +19,39 @@ from google.auth.transport import requests  # pylint: disable=import-error
 from google.oauth2 import id_token  # pylint: disable=import-error
 from google_auth_oauthlib.flow import Flow  # pylint: disable=import-error
 
-from django_gauth.utilities import check_gauth_authentication, credentials_to_dict
+from django_gauth.utilities import (
+    RedirectionScheme,
+    check_gauth_authentication,
+    credentials_to_dict,
+)
 
 
-def get_origin_url(request: HttpRequest) -> tuple[Optional[str], bool]:  # type: ignore
-    """check origin url"""
+def get_origin_url(
+    request: HttpRequest,
+    retrieve_from: str = "query",
+    retrieve_key: str = "origin_url",
+) -> tuple[Optional[str], bool]:  # type: ignore
+    """Retrieves and validates the origin URL.
 
-    origin_url = request.GET.get("origin_url")
-    # origin_url = request.headers.get('X-ORIGIN-URL')
+    Args:
+        request: The HTTP request object.
+        retrieve_from: The source to retrieve the origin URL from.
+            Must be either ``"query"`` or ``"header"``.
+        retrieve_key: The key to look up in the chosen source.
+
+    Returns:
+        A tuple of (origin_url | None, is_valid_same_origin).
+    """
+    if retrieve_from == "query":
+        origin_url = request.GET.get(retrieve_key)
+    elif retrieve_from == "header":
+        origin_url = request.headers.get(retrieve_key)
+    else:
+        raise ValueError(
+            "ArgumentError | fn:get_origin_url | "
+            "retrieve_from must be either 'query' or 'header'"
+        )
+
     current_url = request.build_absolute_uri()
 
     if hasattr(settings, "DEBUG") and settings.DEBUG:
@@ -99,14 +124,62 @@ def index(request: HttpRequest):  # type: ignore
 
 
 def login(request: HttpRequest):  # type: ignore
-    """Login Api
-    - Initiates the oauth2 Flow
-    """
-    # Check for the authenticity of origin url
-    origin_url, is_valid_origin = get_origin_url(
-        request
-    )  # Fetch from Header:X-ORIGIN-URL in future
+    """Login Api — Initiates the OAuth2 Flow.
 
+    The ``scheme`` query parameter controls how the final redirect URL is
+    resolved:
+
+    - ``PRESERVE_ORIGIN_QP`` — reads ``origin_url`` from query params.
+    - ``PRESERVE_ORIGIN_HP`` — reads ``X-ORIGIN-URL`` from request header.
+    - ``LANDING_PAGE`` / ``DEFAULT`` — uses ``GOOGLE_AUTH_FINAL_REDIRECT_URL``
+      or the package index.
+
+    The ``response`` query parameter controls how the authorization URL is
+    delivered to the caller:
+
+    - ``redirect`` (default) — returns a 302 redirect to Google.
+    - ``json`` — returns a ``JsonResponse`` with ``{"redirect_to": ...}``.
+    """
+    # Determine the redirection scheme from the ?scheme= query parameter.
+    scheme_raw = request.GET.get("scheme", RedirectionScheme.DEFAULT.value)
+    scheme_raw = scheme_raw.upper()
+
+    # Determine the response type from the ?response= query parameter.
+    response_type = request.GET.get("response", "redirect").lower()
+    if response_type not in ("redirect", "json"):
+        return HttpResponseBadRequest(
+            f"Invalid response type '{response_type}'. "
+            f"Valid options: ['redirect', 'json']"
+        )
+
+    # Resolve origin URL based on the selected scheme.
+    origin_url: Optional[str] = None
+    is_valid_origin: bool = False
+
+    if scheme_raw == RedirectionScheme.PRESERVE_ORIGIN_HP.value:
+        origin_url, is_valid_origin = get_origin_url(
+            request, retrieve_from="header", retrieve_key="X-ORIGIN-URL"
+        )
+    elif scheme_raw == RedirectionScheme.PRESERVE_ORIGIN_QP.value:
+        origin_url, is_valid_origin = get_origin_url(
+            request, retrieve_from="query", retrieve_key="origin_url"
+        )
+    elif scheme_raw in (
+        RedirectionScheme.LANDING_PAGE.value,
+        RedirectionScheme.DEFAULT.name,
+    ):
+        origin_url = (
+            settings.GOOGLE_AUTH_FINAL_REDIRECT_URL
+            or request.build_absolute_uri(reverse("django_gauth:index"))
+        )
+        is_valid_origin = True
+    else:
+        return HttpResponseBadRequest(
+            f"Invalid redirection scheme '{scheme_raw}'. "
+            f"Valid options: {[m.name for m in RedirectionScheme]}"
+        )
+
+    # Auth Flow Setup
     flow = Flow.from_client_config(
         client_config={
             "web": {
@@ -115,20 +188,22 @@ def login(request: HttpRequest):  # type: ignore
                 "auth_uri": "https://accounts.google.com/o/oauth2/v2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
             }
-        }
-        # if you need additional scopes, add them here
-        ,
+        },
         scopes=settings.SCOPE,
     )
 
-    # flow.redirect_uri = get_redirect_uri(request) # use this when
     flow.redirect_uri = request.build_absolute_uri(reverse("django_gauth:callback"))
 
     authorization_url, state = flow.authorization_url(
-        access_type="offline", prompt="select_account", include_granted_scopes="true"
+        access_type="offline",
+        prompt=settings.GOOGLE_LOGIN_PROMPT,
+        include_granted_scopes="true",
     )
 
+    # state initialization
     request.session[settings.STATE_KEY_NAME] = state
+
+    # final redirect initialization
     if origin_url and is_valid_origin:
         request.session[settings.FINAL_REDIRECT_KEY_NAME] = origin_url
     else:
@@ -136,11 +211,14 @@ def login(request: HttpRequest):  # type: ignore
             settings.FINAL_REDIRECT_KEY_NAME not in request.session
             or not request.session[settings.FINAL_REDIRECT_KEY_NAME]
         ):
-            # directs where to land after login is successful.
             request.session[settings.FINAL_REDIRECT_KEY_NAME] = (
                 settings.GOOGLE_AUTH_FINAL_REDIRECT_URL
                 or request.build_absolute_uri(reverse("django_gauth:index"))
-            )  # directs where to land after login is successful.
+            )
+
+    # Conditional response based on ?response= parameter
+    if response_type == "json":
+        return JsonResponse({"redirect_to": authorization_url})
     return redirect(authorization_url)
 
 
