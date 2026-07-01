@@ -657,7 +657,9 @@ class LoginViewExtendedTest(TestCase):
     def test_login_with_valid_origin_url(self):
         login_url = reverse("django_gauth:login")
         origin = "http://testserver/my-app/"
-        response = self.client.get(f"{login_url}?origin_url={origin}")
+        response = self.client.get(
+            f"{login_url}?scheme=PRESERVE_ORIGIN_QP&origin_url={origin}"
+        )
         self.assertEqual(response.status_code, 302)
         # Check final_redirect was set in session
         session = self.client.session
@@ -666,7 +668,9 @@ class LoginViewExtendedTest(TestCase):
     def test_login_with_invalid_origin_url(self):
         login_url = reverse("django_gauth:login")
         origin = "https://evil.com/steal/"
-        response = self.client.get(f"{login_url}?origin_url={origin}")
+        response = self.client.get(
+            f"{login_url}?scheme=PRESERVE_ORIGIN_QP&origin_url={origin}"
+        )
         self.assertEqual(response.status_code, 302)
         session = self.client.session
         # Should not set evil origin; should use default
@@ -676,6 +680,115 @@ class LoginViewExtendedTest(TestCase):
         self.client.get(reverse("django_gauth:login"))
         session = self.client.session
         self.assertIn(settings.STATE_KEY_NAME, session)
+
+    def test_login_preserve_origin_hp_returns_json(self):
+        """PRESERVE_ORIGIN_HP scheme with response=json: returns JsonResponse."""
+        login_url = reverse("django_gauth:login")
+        response = self.client.get(
+            f"{login_url}?scheme=PRESERVE_ORIGIN_HP&response=json",
+            HTTP_X_ORIGIN_URL="http://testserver/dashboard/",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/json")
+        import json
+
+        data = json.loads(response.content)
+        self.assertIn("redirect_to", data)
+        self.assertIn("accounts.google.com", data["redirect_to"])
+        # final_redirect should be set to the origin header value
+        session = self.client.session
+        self.assertEqual(
+            session[settings.FINAL_REDIRECT_KEY_NAME], "http://testserver/dashboard/"
+        )
+
+    def test_login_preserve_origin_hp_with_redirect_response(self):
+        """PRESERVE_ORIGIN_HP scheme with response=redirect: returns 302."""
+        login_url = reverse("django_gauth:login")
+        response = self.client.get(
+            f"{login_url}?scheme=PRESERVE_ORIGIN_HP&response=redirect",
+            HTTP_X_ORIGIN_URL="http://testserver/dashboard/",
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("accounts.google.com", response.url)
+
+    def test_login_invalid_response_type_returns_400(self):
+        """Invalid response query param should return 400."""
+        login_url = reverse("django_gauth:login")
+        response = self.client.get(f"{login_url}?response=xml")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn(b"Invalid response type", response.content)
+
+    def test_login_json_response_with_landing_page_scheme(self):
+        """LANDING_PAGE scheme with response=json: returns JsonResponse."""
+        login_url = reverse("django_gauth:login")
+        response = self.client.get(f"{login_url}?scheme=LANDING_PAGE&response=json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/json")
+        import json
+
+        data = json.loads(response.content)
+        self.assertIn("redirect_to", data)
+        self.assertIn("accounts.google.com", data["redirect_to"])
+
+    def test_login_invalid_scheme_returns_400(self):
+        """Invalid scheme query param should return 400."""
+        login_url = reverse("django_gauth:login")
+        response = self.client.get(f"{login_url}?scheme=NONSENSE")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn(b"Invalid redirection scheme", response.content)
+
+    def test_login_landing_page_scheme_uses_configured_url(self):
+        """LANDING_PAGE scheme uses GOOGLE_AUTH_FINAL_REDIRECT_URL."""
+        login_url = reverse("django_gauth:login")
+        response = self.client.get(f"{login_url}?scheme=LANDING_PAGE")
+        self.assertEqual(response.status_code, 302)
+        session = self.client.session
+        # With default settings (GOOGLE_AUTH_FINAL_REDIRECT_URL=None),
+        # should fall back to the index page URL
+        self.assertIn("/gauth/", session[settings.FINAL_REDIRECT_KEY_NAME])
+
+
+# ============================================================
+# views.py — get_origin_url retrieve_from variants
+# ============================================================
+@override_settings(DEBUG=True)
+class GetOriginUrlHeaderTest(TestCase):
+    """Cover get_origin_url with retrieve_from='header'."""
+
+    def setUp(self):
+        self.factory = RequestFactory()
+
+    def test_origin_from_header(self):
+        from django_gauth.views import get_origin_url
+
+        request = self.factory.get(
+            "/gauth/login/", HTTP_X_ORIGIN_URL="http://testserver/page/"
+        )
+        request.session = {}
+        result, is_valid = get_origin_url(
+            request, retrieve_from="header", retrieve_key="X-ORIGIN-URL"
+        )
+        self.assertEqual(result, "http://testserver/page/")
+        self.assertTrue(is_valid)
+
+    def test_origin_from_header_missing(self):
+        from django_gauth.views import get_origin_url
+
+        request = self.factory.get("/gauth/login/")
+        request.session = {}
+        result, is_valid = get_origin_url(
+            request, retrieve_from="header", retrieve_key="X-ORIGIN-URL"
+        )
+        self.assertIsNone(result)
+        self.assertFalse(is_valid)
+
+    def test_invalid_retrieve_from_raises(self):
+        from django_gauth.views import get_origin_url
+
+        request = self.factory.get("/gauth/login/")
+        request.session = {}
+        with self.assertRaises(ValueError):
+            get_origin_url(request, retrieve_from="body", retrieve_key="origin_url")
 
 
 # ============================================================
