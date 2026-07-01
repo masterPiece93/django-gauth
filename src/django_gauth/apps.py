@@ -133,4 +133,20 @@ def set_defaults(app_configs: object, **kwargs: Any) -> list:  # pylint: disable
             )
             info = Info(_msg)
             errors.append(info)
+    
+    if not hasattr(settings, "GOOGLE_LOGIN_PROMPT"):
+        setattr(settings, "GOOGLE_LOGIN_PROMPT", defaults.GOOGLE_LOGIN_PROMPT)
+        _msg = (
+            "GOOGLE_LOGIN_PROMPT settings is not defined."
+            + f"Defaulting to `{defaults.GOOGLE_LOGIN_PROMPT}`"
+        )
+        warnings.warn(_msg)
+    else:
+        if not settings.GOOGLE_LOGIN_PROMPT:
+            _msg = (
+                "GOOGLE_LOGIN_PROMPT setting is set to"
+                + f"`{settings.GOOGLE_LOGIN_PROMPT}` which is logically incorrect."
+            )
+            info = Info(_msg)
+            errors.append(info)
     return errors
