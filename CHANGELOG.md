@@ -51,6 +51,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `GOOGLE_LOGIN_PROMPT` setting — the Google consent screen `prompt` parameter is now
   configurable. Default value: `"select_account consent"`. Accepted values:
   `select_account`, `consent`, `select_account consent`, `none`.
+- **Session Lifecycle Management (issue #86)** — first-class support for keeping a
+  session alive past Google's ~1 hour ID-token lifetime, plus a clean logout:
+    - **`logout()` view** (`/gauth/logout/`) — clears the session (rotating the session
+      key via `flush()`) and, by default, **best-effort revokes the upstream Google
+      token** so access is withdrawn on Google's side too. Mirrors `login()`'s
+      `?response=` convention (`redirect` → `302`, `json` → `{"status": "logged_out"}`).
+      A revocation failure never blocks logout — the local session is always cleared.
+    - **`session_status()` probe** (`/gauth/session`) — a JSON endpoint an SPA can poll
+      to read the current auth state: `{"authenticated": bool, "user": {...} | null}`.
+      It **transparently refreshes** the Google access token (and cached `id_info`) when
+      it has expired but a `refresh_token` is available, so the session survives the
+      1-hour ID-token expiry.
+    - **`get_credentials(request)` accessor** — the reusable building block behind the
+      probe. Returns valid `Credentials` for the request, silently refreshing and
+      re-verifying a fresh `id_token` when needed, and writing the refreshed credentials
+      and `id_info` back to the session.
+    - **`revoke_google_token(token)` helper** — best-effort POST to Google's
+      `revoke` endpoint; returns a `bool` and swallows transport errors.
+    - Two new settings — `GOOGLE_TOKEN_REVOKE_ON_LOGOUT` (default `True`) and
+      `GOOGLE_AUTH_LOGOUT_REDIRECT_URL` (default `None` → package index).
 
 ### Changed
 
