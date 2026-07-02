@@ -69,7 +69,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       and `id_info` back to the session.
     - **`revoke_google_token(token)` helper** — best-effort POST to Google's
       `revoke` endpoint; returns a `bool` and swallows transport errors.
-    - Two new settings — `GOOGLE_TOKEN_REVOKE_ON_LOGOUT` (default `True`) and
+    - **Configurable session policy** — three composable settings let you place
+      the session anywhere from "indefinite rolling" to "force periodic re-login":
+      `GOOGLE_SESSION_AUTO_REFRESH` (default `True`; `False` disables silent
+      refresh so the session ends at ID-token expiry), `GOOGLE_SESSION_MAX_AGE`
+      (default `None`; absolute cap in seconds, enforced even when a valid refresh
+      token exists), and `GOOGLE_SESSION_IDLE_TIMEOUT` (default `None`; idle cap in
+      seconds). The caps are independent and additive, and are enforced by
+      `get_credentials()` / the `/gauth/session` probe. Defaults preserve the
+      previous always-refresh behaviour.
+    - Logout settings — `GOOGLE_TOKEN_REVOKE_ON_LOGOUT` (default `True`) and
       `GOOGLE_AUTH_LOGOUT_REDIRECT_URL` (default `None` → package index).
 
 ### Changed
