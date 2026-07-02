@@ -8,6 +8,8 @@ from google.auth.transport import requests as google_requests  # pylint: disable
 from google.oauth2 import id_token  # pylint: disable=E0401
 from google.oauth2.credentials import Credentials  # pylint: disable=E0401
 
+from django_gauth import defaults
+
 __all__ = [
     "credentials_to_dict",
     "has_epoch_time_passed",
@@ -16,7 +18,17 @@ __all__ = [
     "RedirectionScheme",
     "revoke_google_token",
     "get_credentials",
+    "SESSION_LOGIN_AT_KEY",
+    "SESSION_LAST_ACTIVE_KEY",
 ]
+
+# Internal session bookkeeping keys used by the session-policy layer.
+# ``SESSION_LOGIN_AT_KEY`` is stamped once at ``callback`` time and is the anchor
+# for the absolute-age cap — it is never overwritten on refresh.
+# ``SESSION_LAST_ACTIVE_KEY`` tracks the last successful credential access and
+# drives the idle timeout (only written when an idle timeout is configured).
+SESSION_LOGIN_AT_KEY = "gauth_login_at"
+SESSION_LAST_ACTIVE_KEY = "gauth_last_active"
 
 
 class RedirectionScheme(str, enum.Enum):
@@ -136,31 +148,98 @@ def revoke_google_token(token: str) -> bool:
     return getattr(response, "status", None) == 200
 
 
+def _within_session_policy(session: Any) -> bool:
+    """Return whether the session is still within the configured policy bounds.
+
+    Two independent, optional caps are enforced:
+
+    - **Absolute age** (``GOOGLE_SESSION_MAX_AGE``) — measured from the login
+      timestamp stamped at ``callback`` time (never moved on refresh).
+    - **Idle timeout** (``GOOGLE_SESSION_IDLE_TIMEOUT``) — measured from the last
+      successful credential access.
+
+    A missing timestamp (e.g. a legacy session created before the policy was
+    enabled) is treated as *satisfied* so existing users are not abruptly locked
+    out. When neither cap is configured this always returns ``True``.
+    """
+    now = time.time()
+
+    max_age = getattr(
+        settings, "GOOGLE_SESSION_MAX_AGE", defaults.GOOGLE_SESSION_MAX_AGE
+    )
+    if max_age is not None:
+        login_at = session.get(SESSION_LOGIN_AT_KEY)
+        if login_at is not None and (now - login_at) > max_age:
+            return False
+
+    idle_timeout = getattr(
+        settings, "GOOGLE_SESSION_IDLE_TIMEOUT", defaults.GOOGLE_SESSION_IDLE_TIMEOUT
+    )
+    if idle_timeout is not None:
+        last_active = session.get(SESSION_LAST_ACTIVE_KEY)
+        if last_active is not None and (now - last_active) > idle_timeout:
+            return False
+
+    return True
+
+
+def _touch_last_active(session: Any) -> None:
+    """Stamp the session's last-active time — only when an idle timeout applies.
+
+    Skipping the write when no idle timeout is configured avoids a session save
+    on every authenticated request, keeping behaviour identical to pre-policy
+    releases when the feature is unused.
+    """
+    idle_timeout = getattr(
+        settings, "GOOGLE_SESSION_IDLE_TIMEOUT", defaults.GOOGLE_SESSION_IDLE_TIMEOUT
+    )
+    if idle_timeout is None:
+        return
+    session[SESSION_LAST_ACTIVE_KEY] = time.time()
+    if hasattr(session, "modified"):
+        session.modified = True
+
+
 def get_credentials(request: Any) -> Optional[Credentials]:
     """Return valid Google credentials for the request, refreshing if needed.
 
-    This is the session-lifecycle accessor: it loads the stored credentials,
-    and — when the session has expired but a ``refresh_token`` is available —
-    transparently refreshes the access token, re-verifies the fresh ``id_token``
-    and writes the refreshed credentials and ``id_info`` back to the session.
+    This is the session-lifecycle accessor. It enforces the configurable session
+    policy (:data:`GOOGLE_SESSION_AUTO_REFRESH`, :data:`GOOGLE_SESSION_MAX_AGE`,
+    :data:`GOOGLE_SESSION_IDLE_TIMEOUT`) and, when policy allows, transparently
+    refreshes an expired access token — re-verifying the fresh ``id_token`` and
+    writing the refreshed credentials and ``id_info`` back to the session.
 
     Args:
         request: The Django request whose ``session`` holds the credentials.
 
     Returns:
         A valid ``Credentials`` object, or ``None`` when the user is not
-        authenticated and no refresh is possible.
+        authenticated, the session policy has expired the session, or no refresh
+        is possible.
     """
     session = request.session
+    credentials_session_key = settings.CREDENTIALS_SESSION_KEY_NAME or "credentials"
+
+    # No stored credentials → definitely unauthenticated.
+    if credentials_session_key not in session:
+        return None
+
+    # Policy gate: absolute-age / idle-timeout caps expire the session even when
+    # the underlying Google token is still technically valid.
+    if not _within_session_policy(session):
+        return None
 
     # Fast path: an unexpired session already has usable credentials.
     authenticated, credentials = check_gauth_authentication(session)
     if authenticated:
+        _touch_last_active(session)
         return credentials
 
-    # Slow path: attempt a silent refresh using the stored refresh_token.
-    credentials_session_key = settings.CREDENTIALS_SESSION_KEY_NAME or "credentials"
-    if credentials_session_key not in session:
+    # Slow path: transparent refresh — only when auto-refresh is enabled.
+    auto_refresh = getattr(
+        settings, "GOOGLE_SESSION_AUTO_REFRESH", defaults.GOOGLE_SESSION_AUTO_REFRESH
+    )
+    if not auto_refresh:
         return None
 
     stored = session[credentials_session_key]
@@ -188,6 +267,7 @@ def get_credentials(request: Any) -> Optional[Credentials]:
 
     session[credentials_session_key] = credentials_to_dict(credentials)
     session["id_info"] = new_id_info
+    _touch_last_active(session)
     if hasattr(session, "modified"):
         session.modified = True
     return credentials
