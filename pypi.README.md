@@ -26,13 +26,21 @@ configuration, just the Google flow, clearly documented.
 | Setup for *just Google* | ⚡ Minimal (3 settings + 1 URL include) | 🧩 Broad, multi-step config | 🛠️ Manual OAuth wiring |
 | Built-in login page | ✅ Ships a landing page | ➖ Bring your own templates | ❌ Build it yourself |
 | Nested & dynamic auth (return-to-origin) | ✅ Built-in schemes | ➖ DIY | ❌ DIY |
+| Session lifecycle (auto-refresh + revoking logout) | ✅ Built-in, configurable policy | ➖ DIY | ❌ DIY |
 | Scope | 🎯 Google OAuth2 only | 🌐 Many providers | 🎯 Whatever you build |
+| Needs a `User` model + migrations | ✅ No — session-only | ➖ Yes — DB-backed | 🛠️ Up to you |
 | Learning curve | 📉 Low | 📈 Higher (large surface) | ⚠️ Easy to get OAuth subtly wrong |
-| Typed & tested | ✅ Type hints + ~99% coverage | ✅ Mature | ➖ Up to you |
+| Typed & tested | ✅ Type hints + 100% coverage | ✅ Mature | ➖ Up to you |
 
-**Reach for `django-allauth`** when you need many providers, account linking, and email
-workflows. **Reach for `django-gauth`** when you want Google sign-in working *today* with
-minimal ceremony.
+**Reach for `django-allauth` or `python-social-auth`** when you need real user *accounts* — a
+`User` row per person, many providers, account linking, or email workflows. **Reach for
+`django-gauth`** when you just need to answer *"is this a signed-in Google user?"* for an **SPA or
+API backend** — session-only, **no `User` model, no migrations** — with a JSON `/gauth/session`
+probe and a configurable session policy.
+
+> ℹ️ Transparent refresh and SPA support aren't unique (social-auth has a refresh helper; allauth
+> has a Headless API). `django-gauth`'s contribution is delivering them in that **stateless,
+> `User`-model-free** setting — where you'd otherwise wire it by hand.
 
 ## ✨ Standout feature — Nested & Dynamic Auth
 
