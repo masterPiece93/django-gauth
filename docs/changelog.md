@@ -26,6 +26,20 @@ All notable changes to this project are documented here.
   (default `302`) or `json` (`{"redirect_to": ...}`) delivery of the authorization URL.
   The JSON form lets an SPA drive the top-level navigation itself, and is required for the
   `PRESERVE_ORIGIN_HP` scheme.
+- **Session Lifecycle Management (issue #86)** — keep sessions alive past Google's ~1 hour
+  ID-token lifetime, plus a clean logout. See
+  [Session Lifecycle](concepts/session-lifecycle.md).
+    - **`logout()` view** (`/gauth/logout/`) — flushes the session and best-effort
+      **revokes the upstream Google token**. Mirrors `login()`'s `?response=` convention
+      (`redirect` → `302`, `json` → `{"status": "logged_out"}`). Revocation failures never
+      block logout.
+    - **`session_status()` probe** (`/gauth/session`) — a JSON endpoint an SPA can poll:
+      `{"authenticated": bool, "user": {...} | null}`. It **transparently refreshes** the
+      access token and cached `id_info` when they've expired but a `refresh_token` exists.
+    - **`get_credentials(request)` accessor** and **`revoke_google_token(token)` helper**
+      are exported from `django_gauth.utilities`.
+    - New settings — `GOOGLE_TOKEN_REVOKE_ON_LOGOUT` (default `True`) and
+      `GOOGLE_AUTH_LOGOUT_REDIRECT_URL` (default `None`).
 
 ### Security
 

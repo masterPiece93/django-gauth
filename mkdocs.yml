@@ -119,6 +119,7 @@ nav:
       - How OAuth2 Works: concepts/oauth2-explained.md
       - Architecture: concepts/architecture.md
       - Redirection Schemes: concepts/redirection-schemes.md
+      - Session Lifecycle: concepts/session-lifecycle.md
   - Configuration:
       - Settings Reference: configuration/settings.md
       - URL Configuration: configuration/urls.md

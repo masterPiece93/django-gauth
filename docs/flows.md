@@ -166,6 +166,65 @@ gantt
 
 ---
 
+## Session Refresh Flow
+
+How the `/gauth/session` probe survives the ~1 hour ID-token expiry by
+transparently refreshing. See [Session Lifecycle](concepts/session-lifecycle.md).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as 🌐 SPA / Browser
+    participant D as 🖥️ Django Server
+    participant G as 🔐 Google Token API
+
+    B->>D: GET /gauth/session
+    D->>D: check_gauth_authentication(session)
+
+    alt Session still valid
+        D-->>B: 200 { authenticated: true, user }
+    else id_info expired, refresh_token present
+        D->>G: POST /token (grant_type=refresh_token)
+        G-->>D: fresh access_token + id_token
+        D->>D: Re-verify fresh id_token → new id_info
+        D->>D: Write credentials + id_info back to session
+        D-->>B: 200 { authenticated: true, user }
+    else No refresh possible
+        D-->>B: 200 { authenticated: false, user: null }
+    end
+```
+
+---
+
+## Logout Flow
+
+`/gauth/logout/` clears the session and best-effort revokes the Google token.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as 🌐 Browser / SPA
+    participant D as 🖥️ Django Server
+    participant G as 🔐 Google Revoke API
+
+    B->>D: GET /gauth/logout/  (?response=redirect|json)
+
+    opt GOOGLE_TOKEN_REVOKE_ON_LOGOUT and token in session
+        D->>G: POST /revoke (refresh_token)
+        G-->>D: 200 (best-effort — failures ignored)
+    end
+
+    D->>D: session.flush() — rotates the session key
+
+    alt response=json
+        D-->>B: 200 { status: logged_out }
+    else response=redirect (default)
+        D-->>B: 302 → GOOGLE_AUTH_LOGOUT_REDIRECT_URL (or /gauth/)
+    end
+```
+
+---
+
 ## Error Flows
 
 ### Redirect URI Mismatch

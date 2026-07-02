@@ -41,12 +41,16 @@ graph TD
         A["/gauth/" — index]
         B["/gauth/login/" — login]
         C["/gauth/login-callback" — callback]
+        F["/gauth/logout/" — logout]
+        G["/gauth/session" — session]
         D["/gauth/debug" — debug<br/><small>(DEBUG=True only)</small>]
     end
 
     A -->|"Authenticate button"| B
     B -->|"Google redirects here"| C
     C -->|"Redirect to final URL"| E[Your App]
+    E -->|"Poll auth state"| G
+    E -->|"Sign out"| F
 
     style D fill:#FF9800,color:white
 ```
@@ -58,6 +62,8 @@ graph TD
 | `django_gauth:index` | `/gauth/` | `index` | GET | Landing page |
 | `django_gauth:login` | `/gauth/login/` | `login` | GET | Start OAuth flow |
 | `django_gauth:callback` | `/gauth/login-callback` | `callback` | GET | Handle OAuth response |
+| `django_gauth:logout` | `/gauth/logout/` | `logout` | GET | Clear session + revoke token |
+| `django_gauth:session` | `/gauth/session` | `session_status` | GET | Auth-state probe (auto-refresh) |
 | `django_gauth:debug` | `/gauth/debug` | `debug_information` | GET | Session debug info |
 
 ---

@@ -51,6 +51,16 @@ tags:
 
     [:octicons-arrow-right-24: Redirection Schemes](concepts/redirection-schemes.md)
 
+-   :material-refresh-auto:{ .lg .middle } **Session Lifecycle**
+
+    ---
+
+    Sessions **survive past Google's 1-hour token expiry** via transparent refresh,
+    and a clean `logout()` that **revokes the Google token** — not just the local
+    session.
+
+    [:octicons-arrow-right-24: Session Lifecycle](concepts/session-lifecycle.md)
+
 </div>
 
 ---
@@ -75,6 +85,7 @@ graph LR
 | Built-in landing page | :white_check_mark: | :x: |
 | Session management | :white_check_mark: | Manual |
 | Nested & dynamic auth (return-to-origin) | :white_check_mark: | Manual & error-prone |
+| Session refresh + revoking logout | :white_check_mark: | Manual & error-prone |
 | System checks on startup | :white_check_mark: | :x: |
 | Debug endpoint | :white_check_mark: | :x: |
 | Type hints | :white_check_mark: | Varies |
