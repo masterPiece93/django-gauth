@@ -142,6 +142,47 @@ All settings are defined in your Django project's `settings.py`.
           consent on every login is intrusive.
         - Set to `"none"` for silent SSO flows where the user has previously consented.
 
+### `GOOGLE_TOKEN_REVOKE_ON_LOGOUT`
+
+:   Whether the [`logout()`](../api/views.md#logoutrequest) view best-effort revokes the
+    upstream Google token before flushing the local session. Revoking withdraws access on
+    Google's side too, not just locally.
+
+    ```python
+    # Default — revoke the Google token on logout
+    GOOGLE_TOKEN_REVOKE_ON_LOGOUT = True
+
+    # Only clear the local session; leave the Google grant intact
+    GOOGLE_TOKEN_REVOKE_ON_LOGOUT = False
+    ```
+
+    **Type:** `bool` · **Default:** `True`
+
+    !!! info "Best-effort by design"
+        The `refresh_token` is preferred for revocation (revoking it also invalidates
+        derived access tokens). A revocation failure **never** blocks logout — the local
+        session is always cleared.
+
+### `GOOGLE_AUTH_LOGOUT_REDIRECT_URL`
+
+:   Where the [`logout()`](../api/views.md#logoutrequest) view redirects to when called
+    with the default `?response=redirect`. `None` falls back to the `/gauth/` index page.
+
+    ```python
+    # Send users to your marketing site after logout
+    GOOGLE_AUTH_LOGOUT_REDIRECT_URL = "https://myapp.example.com/goodbye/"
+
+    # Or fall back to the /gauth/ landing page
+    GOOGLE_AUTH_LOGOUT_REDIRECT_URL = None
+    ```
+
+    **Type:** `Optional[str]` · **Default:** `None` (redirects to `/gauth/`)
+
+    !!! tip "SPA logout"
+        Frontends usually call `/gauth/logout/?response=json` and handle navigation
+        themselves — in that case this setting is not consulted. See
+        [Session Lifecycle](../concepts/session-lifecycle.md).
+
 ### `DJANGO_GAUTH_UI_CONFIG`
 
 :   Customize the appearance of the built-in landing page.
@@ -190,6 +231,8 @@ All settings are defined in your Django project's `settings.py`.
 | `CREDENTIALS_SESSION_KEY_NAME` | ❌ | `str` | `"credentials"` |
 | `STATE_KEY_NAME` | ❌ | `str` | `"oauth_state"` |
 | `GOOGLE_LOGIN_PROMPT` | ❌ | `str` | `"select_account consent"` |
+| `GOOGLE_TOKEN_REVOKE_ON_LOGOUT` | ❌ | `bool` | `True` |
+| `GOOGLE_AUTH_LOGOUT_REDIRECT_URL` | ❌ | `str\|None` | `None` |
 | `DJANGO_GAUTH_UI_CONFIG` | ❌ | `dict` | Not set |
 
 ---

@@ -138,6 +138,104 @@ flowchart LR
 
 ---
 
+## `logout(request)`
+
+Clears the session and (optionally) revokes the upstream Google token.
+
+| Property | Value |
+|----------|-------|
+| **URL** | `/gauth/logout/` |
+| **Method** | `GET` |
+| **URL Name** | `django_gauth:logout` |
+| **Response** | `302 Redirect` (default) · `JsonResponse` when `response=json` · `400 Bad Request` on an invalid `response` |
+
+**Query Parameters:**
+
+| Param | Optional | Description |
+|-------|:--------:|-------------|
+| `response` | ✅ | How logout responds: `redirect` (default, `302` to `GOOGLE_AUTH_LOGOUT_REDIRECT_URL` or the index) or `json` (`{"status": "logged_out"}`) |
+
+**Behaviour controlled by settings:**
+
+| Setting | Effect on this view |
+|---------|-------------------|
+| `GOOGLE_TOKEN_REVOKE_ON_LOGOUT` | When `True` (default), the stored Google token is best-effort revoked before the session is flushed |
+| `GOOGLE_AUTH_LOGOUT_REDIRECT_URL` | Destination for the `redirect` response (falls back to the `/gauth/` index) |
+
+**What it does:**
+
+```mermaid
+flowchart LR
+    A[Parse response type] --> B{Valid?}
+    B -->|no| X[400 Bad Request]
+    B -->|yes| C{Revoke enabled\n& token present?}
+    C -->|yes| D[Revoke token at Google]
+    C -->|no| E[Skip revocation]
+    D --> F[session.flush]
+    E --> F
+    F --> G{response=json?}
+    G -->|yes| H[JsonResponse status=logged_out]
+    G -->|no| I[302 → logout redirect]
+```
+
+!!! info "Revocation is best-effort"
+    The `refresh_token` is preferred for revocation (revoking it also invalidates
+    derived access tokens). A revocation failure — network error, already-revoked
+    token — **never** blocks logout; the local session is always cleared via
+    `session.flush()`, which also rotates the session key.
+
+---
+
+## `session_status(request)`
+
+Session probe for SPA frontends — returns the current auth state as JSON and
+**auto-refreshes** an expired token when possible.
+
+| Property | Value |
+|----------|-------|
+| **URL** | `/gauth/session` |
+| **Method** | `GET` |
+| **URL Name** | `django_gauth:session` |
+| **Response** | `JsonResponse` |
+
+**Response shape:**
+
+```json
+{ "authenticated": true, "user": { "email": "...", "name": "...", "picture": "..." } }
+```
+
+```json
+{ "authenticated": false, "user": null }
+```
+
+**What it does:**
+
+```mermaid
+flowchart LR
+    A[get_credentials] --> B{Valid session?}
+    B -->|yes| C[return credentials]
+    B -->|expired| D{refresh_token?}
+    D -->|no| E[return None]
+    D -->|yes| F[Refresh access token]
+    F --> G[Re-verify fresh id_token]
+    G --> H[Write creds + id_info back to session]
+    H --> C
+    C --> R[authenticated=true + sanitized user]
+    E --> S[authenticated=false + user=null]
+```
+
+!!! tip "Surviving the 1-hour ID-token expiry"
+    Google's ID token lives ~1 hour. `session_status()` (via
+    [`get_credentials()`](utilities.md#get_credentialsrequest)) silently refreshes
+    the access token **and** the cached `id_info` when a `refresh_token` is present,
+    so the user's session survives well beyond that window. See
+    [Session Lifecycle](../concepts/session-lifecycle.md).
+
+    The `user` payload is the sanitized `id_info` (`iss`/`azp`/`aud`/`sub` stripped),
+    matching the landing page and debug endpoint.
+
+---
+
 ## `debug_information(request)`
 
 Returns sanitized session data as JSON. **Only available when `DEBUG=True`.**

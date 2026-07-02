@@ -16,6 +16,8 @@ from django_gauth.utilities import (
     has_epoch_time_passed,
     check_gauth_authentication,
     is_valid_google_url,
+    get_credentials,
+    revoke_google_token,
 )
 ```
 
@@ -147,3 +149,88 @@ is_valid_google_url("https://docs.google.com/document/d/abc")  # True
 is_valid_google_url("http://docs.google.com/document/d/abc")   # False (http)
 is_valid_google_url("https://drive.google.com/file/d/abc")     # False (wrong domain)
 ```
+
+---
+
+## `get_credentials(request)`
+
+The **session-lifecycle accessor** — returns valid Google `Credentials` for the request,
+transparently refreshing them when the session has expired but a `refresh_token` is
+available. This is the building block behind the [`session_status()`](views.md#session_statusrequest)
+probe.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `request` | `django.http.HttpRequest` | The request whose `session` holds the credentials |
+
+**Returns:** `Optional[Credentials]` — valid credentials, or `None` when the user is not
+authenticated and no refresh is possible.
+
+**Logic flow:**
+
+```mermaid
+flowchart TD
+    A[get_credentials] --> B{check_gauth_authentication\nvalid?}
+    B -->|Yes| C[return credentials]
+    B -->|No| D{credentials in session?}
+    D -->|No| E[return None]
+    D -->|Yes| F{refresh_token present?}
+    F -->|No| E
+    F -->|Yes| G[Rebuild Credentials + refresh]
+    G --> H{Refresh + re-verify ok?}
+    H -->|No| E
+    H -->|Yes| I[Write creds + id_info back to session]
+    I --> C
+
+    style C fill:#4CAF50,color:white
+    style E fill:#f44336,color:white
+```
+
+!!! success "Refreshes the ID token too"
+    A plain access-token refresh would leave the cached `id_info` — and therefore the
+    session lifetime — stuck at the original ~1 hour expiry. `get_credentials()`
+    re-verifies the **fresh `id_token`** returned by the refresh and writes the new
+    `id_info` back to the session, so the session moves forward with each refresh.
+
+**Usage in your views:**
+
+```python
+from django_gauth.utilities import get_credentials
+
+def my_protected_api(request):
+    credentials = get_credentials(request)
+    if credentials is None:
+        return JsonResponse({"detail": "unauthenticated"}, status=401)
+    # credentials.token is guaranteed fresh — call a Google API...
+```
+
+---
+
+## `revoke_google_token(token)`
+
+Best-effort revocation of a Google OAuth2 token at Google's `revoke` endpoint. Used by
+the [`logout()`](views.md#logoutrequest) view when `GOOGLE_TOKEN_REVOKE_ON_LOGOUT` is
+enabled.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `token` | `str` | The token to revoke — prefer the `refresh_token` (revoking it also invalidates derived access tokens) |
+
+**Returns:** `bool` — `True` when Google responds `200`, `False` on a non-`200` response,
+an empty token, or any transport error (the exception is swallowed).
+
+```python
+from django_gauth.utilities import revoke_google_token
+
+revoke_google_token("1//0d-refresh-token")   # True on success
+revoke_google_token("")                        # False (nothing to revoke)
+```
+
+!!! info "Never raises"
+    This helper is intentionally forgiving so a logout is never blocked by an upstream
+    hiccup. Check the return value if you need to know whether revocation succeeded.
+
