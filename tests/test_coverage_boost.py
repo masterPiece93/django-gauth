@@ -1179,3 +1179,307 @@ class CallbackViewTest(TestCase):
         # credentials and id_info must still be present
         self.assertIn(settings.CREDENTIALS_SESSION_KEY_NAME, request.session)
         self.assertIn("id_info", request.session)
+
+
+# ============================================================
+# utilities.py — revoke_google_token (v0.4.0 session lifecycle)
+# ============================================================
+class RevokeGoogleTokenTest(TestCase):
+    """Cover utilities.revoke_google_token"""
+
+    def test_empty_token_returns_false(self):
+        from django_gauth.utilities import revoke_google_token
+
+        self.assertFalse(revoke_google_token(""))
+
+    @patch("django_gauth.utilities.google_requests.Request")
+    def test_successful_revocation_returns_true(self, mock_request_cls):
+        from django_gauth.utilities import revoke_google_token
+
+        mock_transport = MagicMock()
+        mock_transport.return_value = MagicMock(status=200)
+        mock_request_cls.return_value = mock_transport
+
+        self.assertTrue(revoke_google_token("some-refresh-token"))
+        mock_transport.assert_called_once()
+
+    @patch("django_gauth.utilities.google_requests.Request")
+    def test_non_200_returns_false(self, mock_request_cls):
+        from django_gauth.utilities import revoke_google_token
+
+        mock_transport = MagicMock()
+        mock_transport.return_value = MagicMock(status=400)
+        mock_request_cls.return_value = mock_transport
+
+        self.assertFalse(revoke_google_token("bad-token"))
+
+    @patch("django_gauth.utilities.google_requests.Request")
+    def test_transport_exception_returns_false(self, mock_request_cls):
+        from django_gauth.utilities import revoke_google_token
+
+        mock_transport = MagicMock()
+        mock_transport.side_effect = Exception("network down")
+        mock_request_cls.return_value = mock_transport
+
+        self.assertFalse(revoke_google_token("some-token"))
+
+
+# ============================================================
+# utilities.py — get_credentials accessor (v0.4.0 session lifecycle)
+# ============================================================
+class GetCredentialsTest(TestCase):
+    """Cover utilities.get_credentials"""
+
+    def setUp(self):
+        self.factory = RequestFactory()
+
+    def _request(self, session):
+        request = self.factory.get("/gauth/session")
+        request.session = session
+        return request
+
+    def test_no_credentials_returns_none(self):
+        from django_gauth.utilities import get_credentials
+
+        result = get_credentials(self._request({}))
+        self.assertIsNone(result)
+
+    @patch("django_gauth.utilities.Credentials")
+    def test_valid_session_returns_credentials(self, mock_credentials_class):
+        from django_gauth.utilities import get_credentials
+
+        inst = MagicMock()
+        inst.valid = True
+        mock_credentials_class.return_value = inst
+
+        session = {
+            settings.CREDENTIALS_SESSION_KEY_NAME: {
+                "token": "tok",
+                "refresh_token": "rtok",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "scopes": ["openid"],
+            }
+        }
+        result = get_credentials(self._request(session))
+        self.assertEqual(result, inst)
+        # a valid session must NOT trigger a refresh
+        inst.refresh.assert_not_called()
+
+    @patch("django_gauth.utilities.id_token.verify_oauth2_token")
+    @patch("django_gauth.utilities.google_requests.Request")
+    @patch("django_gauth.utilities.Credentials")
+    def test_expired_session_refreshes(
+        self, mock_credentials_class, mock_request_cls, mock_verify
+    ):
+        from django_gauth.utilities import get_credentials
+
+        inst = MagicMock()
+        inst.valid = True
+        inst.token = "new-access-token"
+        inst.refresh_token = "rtok"
+        inst.token_uri = "https://oauth2.googleapis.com/token"
+        inst.scopes = ["openid"]
+        mock_credentials_class.return_value = inst
+        mock_verify.return_value = {
+            "email": "user@example.com",
+            "exp": time.time() + 3600,
+        }
+
+        session = {
+            settings.CREDENTIALS_SESSION_KEY_NAME: {
+                "token": "stale",
+                "refresh_token": "rtok",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "scopes": ["openid"],
+            },
+            "id_info": {"exp": time.time() - 100},  # expired
+        }
+        result = get_credentials(self._request(session))
+
+        self.assertEqual(result, inst)
+        inst.refresh.assert_called_once()
+        # session must carry the freshly verified id_info forward
+        self.assertEqual(session["id_info"]["email"], "user@example.com")
+        self.assertGreater(session["id_info"]["exp"], time.time())
+
+    @patch("django_gauth.utilities.id_token.verify_oauth2_token")
+    @patch("django_gauth.utilities.google_requests.Request")
+    @patch("django_gauth.utilities.Credentials")
+    def test_expired_session_flags_real_session_modified(
+        self, mock_credentials_class, mock_request_cls, mock_verify
+    ):
+        """A real Django session must be flagged ``modified`` after a refresh."""
+        from django.contrib.sessions.backends.signed_cookies import SessionStore
+
+        from django_gauth.utilities import get_credentials
+
+        inst = MagicMock()
+        inst.valid = True
+        inst.token = "new-access-token"
+        inst.refresh_token = "rtok"
+        inst.token_uri = "https://oauth2.googleapis.com/token"
+        inst.scopes = ["openid"]
+        mock_credentials_class.return_value = inst
+        mock_verify.return_value = {
+            "email": "user@example.com",
+            "exp": time.time() + 3600,
+        }
+
+        session = SessionStore()
+        session[settings.CREDENTIALS_SESSION_KEY_NAME] = {
+            "token": "stale",
+            "refresh_token": "rtok",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "scopes": ["openid"],
+        }
+        session["id_info"] = {"exp": time.time() - 100}  # expired
+        session.modified = False  # reset flag after seeding
+
+        result = get_credentials(self._request(session))
+
+        self.assertEqual(result, inst)
+        # our code path must re-flag the real session as modified
+        self.assertTrue(session.modified)
+
+    def test_expired_session_without_refresh_token_returns_none(self):
+        from django_gauth.utilities import get_credentials
+
+        session = {
+            settings.CREDENTIALS_SESSION_KEY_NAME: {
+                "token": "stale",
+                "refresh_token": "",  # nothing to refresh with
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "scopes": ["openid"],
+            },
+            "id_info": {"exp": time.time() - 100},  # expired
+        }
+        result = get_credentials(self._request(session))
+        self.assertIsNone(result)
+
+    @patch("django_gauth.utilities.google_requests.Request")
+    @patch("django_gauth.utilities.Credentials")
+    def test_refresh_failure_returns_none(
+        self, mock_credentials_class, mock_request_cls
+    ):
+        from django_gauth.utilities import get_credentials
+
+        inst = MagicMock()
+        inst.valid = True
+        inst.refresh.side_effect = Exception("refresh failed")
+        mock_credentials_class.return_value = inst
+
+        session = {
+            settings.CREDENTIALS_SESSION_KEY_NAME: {
+                "token": "stale",
+                "refresh_token": "rtok",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "scopes": ["openid"],
+            },
+            "id_info": {"exp": time.time() - 100},  # expired
+        }
+        result = get_credentials(self._request(session))
+        self.assertIsNone(result)
+
+
+# ============================================================
+# views.py — logout view (v0.4.0 session lifecycle)
+# ============================================================
+class LogoutViewTest(TestCase):
+    """Cover views.logout"""
+
+    def setUp(self):
+        self.client = Client()
+
+    def _seed_credentials(self):
+        session = self.client.session
+        session[settings.CREDENTIALS_SESSION_KEY_NAME] = {
+            "token": "access-tok",
+            "refresh_token": "refresh-tok",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "scopes": ["openid"],
+        }
+        session.save()
+
+    @patch("django_gauth.views.revoke_google_token")
+    def test_logout_json_response(self, mock_revoke):
+        import json
+
+        self._seed_credentials()
+        response = self.client.get(reverse("django_gauth:logout") + "?response=json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(json.loads(response.content), {"status": "logged_out"})
+        # the refresh_token is preferred for revocation
+        mock_revoke.assert_called_once_with("refresh-tok")
+        # session must be cleared
+        self.assertNotIn(settings.CREDENTIALS_SESSION_KEY_NAME, self.client.session)
+
+    def test_logout_redirect_response_default(self):
+        response = self.client.get(reverse("django_gauth:logout"))
+        self.assertEqual(response.status_code, 302)
+
+    def test_logout_invalid_response_returns_400(self):
+        response = self.client.get(reverse("django_gauth:logout") + "?response=xml")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn(b"Invalid response type", response.content)
+
+    @override_settings(GOOGLE_AUTH_LOGOUT_REDIRECT_URL="http://testserver/bye/")
+    def test_logout_custom_redirect_url(self):
+        response = self.client.get(reverse("django_gauth:logout"))
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, "http://testserver/bye/")
+
+    @override_settings(GOOGLE_TOKEN_REVOKE_ON_LOGOUT=False)
+    @patch("django_gauth.views.revoke_google_token")
+    def test_logout_revocation_disabled(self, mock_revoke):
+        self._seed_credentials()
+        response = self.client.get(reverse("django_gauth:logout") + "?response=json")
+        self.assertEqual(response.status_code, 200)
+        mock_revoke.assert_not_called()
+
+
+# ============================================================
+# views.py — session_status probe (v0.4.0 session lifecycle)
+# ============================================================
+class SessionStatusViewTest(TestCase):
+    """Cover views.session_status"""
+
+    def setUp(self):
+        self.client = Client()
+
+    @patch("django_gauth.views.get_credentials")
+    def test_session_authenticated(self, mock_get_credentials):
+        import json
+
+        mock_get_credentials.return_value = MagicMock()  # non-None → authenticated
+        session = self.client.session
+        session["id_info"] = {
+            "email": "user@example.com",
+            "name": "Test User",
+            "iss": "accounts.google.com",
+            "azp": "abc",
+            "aud": "xyz",
+            "sub": "1234",
+        }
+        session.save()
+
+        response = self.client.get(reverse("django_gauth:session"))
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertTrue(data["authenticated"])
+        self.assertEqual(data["user"]["email"], "user@example.com")
+        # opaque claims must be stripped
+        self.assertNotIn("iss", data["user"])
+        self.assertNotIn("azp", data["user"])
+        self.assertNotIn("aud", data["user"])
+        self.assertNotIn("sub", data["user"])
+
+    @patch("django_gauth.views.get_credentials")
+    def test_session_unauthenticated(self, mock_get_credentials):
+        import json
+
+        mock_get_credentials.return_value = None
+        response = self.client.get(reverse("django_gauth:session"))
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.content)
+        self.assertFalse(data["authenticated"])
+        self.assertIsNone(data["user"])

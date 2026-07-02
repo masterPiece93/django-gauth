@@ -19,10 +19,13 @@ from google.auth.transport import requests  # pylint: disable=import-error
 from google.oauth2 import id_token  # pylint: disable=import-error
 from google_auth_oauthlib.flow import Flow  # pylint: disable=import-error
 
+from django_gauth import defaults
 from django_gauth.utilities import (
     RedirectionScheme,
     check_gauth_authentication,
     credentials_to_dict,
+    get_credentials,
+    revoke_google_token,
 )
 
 
@@ -287,6 +290,76 @@ def callback(request: HttpRequest):  # type: ignore
     redirect_response = redirect(request.session[settings.FINAL_REDIRECT_KEY_NAME])
 
     return redirect_response
+
+
+def logout(request: HttpRequest):  # type: ignore
+    """Logout Api — clears the session and (optionally) revokes the Google token.
+
+    Mirrors ``login()``'s ``?response=`` convention so it plugs cleanly into an
+    SPA backend:
+
+    - ``redirect`` *(default)* — `302` to ``GOOGLE_AUTH_LOGOUT_REDIRECT_URL``
+      (or the package index).
+    - ``json`` — `200` with ``{"status": "logged_out"}``.
+
+    Upstream token revocation is best-effort and controlled by the
+    ``GOOGLE_TOKEN_REVOKE_ON_LOGOUT`` setting (default ``True``). A revocation
+    failure never blocks logout — the local session is always cleared.
+    """
+    response_type = request.GET.get("response", "redirect").lower()
+    if response_type not in ("redirect", "json"):
+        return HttpResponseBadRequest(
+            f"Invalid response type '{response_type}'. "
+            f"Valid options: ['redirect', 'json']"
+        )
+
+    # Best-effort upstream token revocation before the session is cleared.
+    revoke_enabled = getattr(
+        settings,
+        "GOOGLE_TOKEN_REVOKE_ON_LOGOUT",
+        defaults.GOOGLE_TOKEN_REVOKE_ON_LOGOUT,
+    )
+    credentials_key = settings.CREDENTIALS_SESSION_KEY_NAME or "credentials"
+    if revoke_enabled and credentials_key in request.session:
+        stored = request.session[credentials_key]
+        # Prefer the refresh_token — revoking it also invalidates access tokens.
+        token = stored.get("refresh_token") or stored.get("token")
+        if token:
+            revoke_google_token(token)
+
+    # Clear the entire session (rotates the session key).
+    request.session.flush()
+
+    if response_type == "json":
+        return JsonResponse({"status": "logged_out"})
+
+    logout_redirect = getattr(settings, "GOOGLE_AUTH_LOGOUT_REDIRECT_URL", None)
+    return redirect(logout_redirect or reverse("django_gauth:index"))
+
+
+def session_status(request: HttpRequest):  # type: ignore
+    """Session probe for SPA frontends.
+
+    Returns the current authentication state as JSON, transparently refreshing
+    the Google access token (and cached ``id_info``) when it has expired but a
+    ``refresh_token`` is available. This is what lets sessions survive past the
+    ~1 hour ID-token lifetime.
+
+    Response shape:
+        ``{"authenticated": bool, "user": {...} | null}``
+
+    The ``user`` payload is the sanitized ``id_info`` (opaque ``iss``/``azp``/
+    ``aud``/``sub`` claims are stripped), matching the landing page and debug
+    endpoint.
+    """
+    credentials = get_credentials(request)
+    if credentials is None:
+        return JsonResponse({"authenticated": False, "user": None})
+
+    user_info = deepcopy(request.session.get("id_info", {}))
+    for claim in ("iss", "azp", "aud", "sub"):
+        user_info.pop(claim, None)
+    return JsonResponse({"authenticated": True, "user": user_info})
 
 
 def debug_information(request: HttpRequest):  # type: ignore
