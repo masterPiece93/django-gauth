@@ -166,23 +166,27 @@ probe.
 | `request` | `django.http.HttpRequest` | The request whose `session` holds the credentials |
 
 **Returns:** `Optional[Credentials]` — valid credentials, or `None` when the user is not
-authenticated and no refresh is possible.
+authenticated, the session policy has expired the session, or no refresh is possible.
 
 **Logic flow:**
 
 ```mermaid
 flowchart TD
-    A[get_credentials] --> B{check_gauth_authentication\nvalid?}
-    B -->|Yes| C[return credentials]
-    B -->|No| D{credentials in session?}
-    D -->|No| E[return None]
-    D -->|Yes| F{refresh_token present?}
+    A[get_credentials] --> Z{credentials in session?}
+    Z -->|No| E[return None]
+    Z -->|Yes| P{within session policy?<br/><small>max-age / idle</small>}
+    P -->|No| E
+    P -->|Yes| B{check_gauth_authentication<br/>valid?}
+    B -->|Yes| T[touch last-active] --> C[return credentials]
+    B -->|No| AR{auto-refresh enabled?}
+    AR -->|No| E
+    AR -->|Yes| F{refresh_token present?}
     F -->|No| E
     F -->|Yes| G[Rebuild Credentials + refresh]
     G --> H{Refresh + re-verify ok?}
     H -->|No| E
     H -->|Yes| I[Write creds + id_info back to session]
-    I --> C
+    I --> T
 
     style C fill:#4CAF50,color:white
     style E fill:#f44336,color:white
@@ -193,6 +197,15 @@ flowchart TD
     session lifetime — stuck at the original ~1 hour expiry. `get_credentials()`
     re-verifies the **fresh `id_token`** returned by the refresh and writes the new
     `id_info` back to the session, so the session moves forward with each refresh.
+
+!!! info "Enforces the session policy"
+    Before returning (or refreshing) credentials, `get_credentials()` applies the
+    configurable session policy — [`GOOGLE_SESSION_AUTO_REFRESH`](../configuration/settings.md#google_session_auto_refresh),
+    [`GOOGLE_SESSION_MAX_AGE`](../configuration/settings.md#google_session_max_age), and
+    [`GOOGLE_SESSION_IDLE_TIMEOUT`](../configuration/settings.md#google_session_idle_timeout).
+    A session that has exceeded its absolute-age or idle cap returns `None` even when
+    the underlying token is still technically valid. See
+    [Session Lifecycle → Choosing a session policy](../concepts/session-lifecycle.md#choosing-a-session-policy).
 
 **Usage in your views:**
 

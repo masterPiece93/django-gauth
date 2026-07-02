@@ -183,6 +183,70 @@ All settings are defined in your Django project's `settings.py`.
         themselves — in that case this setting is not consulted. See
         [Session Lifecycle](../concepts/session-lifecycle.md).
 
+### `GOOGLE_SESSION_AUTO_REFRESH`
+
+:   Master switch for **transparent token refresh**. When `True` (default),
+    [`get_credentials()`](../api/utilities.md#get_credentialsrequest) and the
+    `/gauth/session` probe silently refresh an expired access token (using the
+    stored `refresh_token`) so the session survives past Google's ~1 hour ID-token
+    lifetime. When `False`, an expired session simply **ends** and the user must
+    re-authenticate.
+
+    ```python
+    # Default — keep users signed in via silent refresh
+    GOOGLE_SESSION_AUTO_REFRESH = True
+
+    # Force re-login once the ID token expires (no silent refresh)
+    GOOGLE_SESSION_AUTO_REFRESH = False
+    ```
+
+    **Type:** `bool` · **Default:** `True`
+
+### `GOOGLE_SESSION_MAX_AGE`
+
+:   **Absolute session cap**, in seconds. When set, a session is never extended
+    past `login_time + GOOGLE_SESSION_MAX_AGE` — even when a valid `refresh_token`
+    is available. `None` disables the cap (sessions roll forward indefinitely via
+    refresh).
+
+    ```python
+    # Force a fresh login at least every 8 hours, regardless of activity
+    GOOGLE_SESSION_MAX_AGE = 8 * 60 * 60
+
+    # No absolute cap (default)
+    GOOGLE_SESSION_MAX_AGE = None
+    ```
+
+    **Type:** `Optional[int]` · **Default:** `None`
+
+    !!! tip "Compliance-friendly"
+        Many security policies (PCI-DSS, HIPAA, internal SOC 2 controls) require an
+        absolute re-authentication interval. This setting enforces exactly that,
+        independent of whether Google would still honour the refresh token.
+
+### `GOOGLE_SESSION_IDLE_TIMEOUT`
+
+:   **Idle timeout**, in seconds. When set, a session that has been inactive for
+    longer than this window ends and the user must re-authenticate. Activity is
+    measured by successful calls to `get_credentials()` (e.g. each `/gauth/session`
+    probe or protected API call). `None` disables the idle timeout.
+
+    ```python
+    # Sign users out after 30 minutes of inactivity
+    GOOGLE_SESSION_IDLE_TIMEOUT = 30 * 60
+
+    # No idle timeout (default)
+    GOOGLE_SESSION_IDLE_TIMEOUT = None
+    ```
+
+    **Type:** `Optional[int]` · **Default:** `None`
+
+    !!! info "Absolute cap + idle timeout compose"
+        `GOOGLE_SESSION_MAX_AGE` and `GOOGLE_SESSION_IDLE_TIMEOUT` are independent —
+        set either, both, or neither. A session must satisfy **all** configured
+        caps to be extended. See
+        [Session Lifecycle → Choosing a session policy](../concepts/session-lifecycle.md#choosing-a-session-policy).
+
 ### `DJANGO_GAUTH_UI_CONFIG`
 
 :   Customize the appearance of the built-in landing page.
@@ -233,6 +297,9 @@ All settings are defined in your Django project's `settings.py`.
 | `GOOGLE_LOGIN_PROMPT` | ❌ | `str` | `"select_account consent"` |
 | `GOOGLE_TOKEN_REVOKE_ON_LOGOUT` | ❌ | `bool` | `True` |
 | `GOOGLE_AUTH_LOGOUT_REDIRECT_URL` | ❌ | `str\|None` | `None` |
+| `GOOGLE_SESSION_AUTO_REFRESH` | ❌ | `bool` | `True` |
+| `GOOGLE_SESSION_MAX_AGE` | ❌ | `int\|None` | `None` |
+| `GOOGLE_SESSION_IDLE_TIMEOUT` | ❌ | `int\|None` | `None` |
 | `DJANGO_GAUTH_UI_CONFIG` | ❌ | `dict` | Not set |
 
 ---

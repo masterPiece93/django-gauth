@@ -90,6 +90,45 @@ graph LR
 | Debug endpoint | :white_check_mark: | :x: |
 | Type hints | :white_check_mark: | Varies |
 
+## How is this different from allauth / social-auth?
+
+[django-allauth](https://docs.allauth.org/) and
+[python-social-auth](https://python-social-auth.readthedocs.io/) are excellent,
+full-featured **authentication frameworks**. Django Gauth isn't competing with
+them on breadth — it deliberately fills a **narrower niche**, and the difference
+is **architectural, not mechanical**.
+
+Both frameworks bind to Django's `User` model and persist accounts and tokens in
+the **database** (their own models + migrations) — that's what gives you real
+user accounts, multiple providers, admin integration, email/password, and
+account linking. Django Gauth keeps Google identity in the **session only**:
+**no `User` model, no migrations, no ORM token store.**
+
+| | Django Gauth | allauth / social-auth |
+|---|:---:|:---:|
+| Requires a Django `User` | :x: session-only | :white_check_mark: |
+| DB models + migrations | :x: none | :white_check_mark: |
+| Providers | Google only | Many |
+| Account management (signup, email, linking) | :x: | :white_check_mark: |
+| Footprint | one small app | full framework |
+
+!!! tip "Which should you pick?"
+    - **Choose allauth or social-auth** if you want real user *accounts* — a
+      `User` row per person, multiple providers, email/password, account linking,
+      or Django-admin integration.
+    - **Choose Django Gauth** if you just need to answer *"is this request a
+      signed-in Google user?"* for an **SPA or API backend** — delivered as a JSON
+      [`/gauth/session`](api/views.md#session_statusrequest) probe with a
+      configurable [session policy](concepts/session-lifecycle.md#choosing-a-session-policy),
+      **without** adopting an auth framework, a `User` table, or migrations.
+
+!!! note "On refresh & SPA support — being fair"
+    Neither transparent refresh nor SPA support is unique: social-auth ships a
+    token-refresh helper, and allauth offers a Headless API for frontends. Django
+    Gauth's contribution is delivering session refresh, a JSON auth probe,
+    configurable session caps, and revoking logout in that **stateless,
+    `User`-model-free** setting — where you'd otherwise wire it by hand.
+
 ## Compatibility
 
 | Python | Django |

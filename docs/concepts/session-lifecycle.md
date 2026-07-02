@@ -88,6 +88,86 @@ flowchart TD
 
 ---
 
+## Choosing a session policy :material-tune-variant:
+
+Transparent refresh is a **default, not a mandate**. A rolling, never-expiring
+session is great for a consumer SPA — and exactly wrong for a compliance-bound or
+high-value app that must force periodic re-authentication. Django Gauth exposes
+three composable knobs so you can sit anywhere on that spectrum:
+
+| Setting | Type | Default | What it does |
+|---------|------|---------|--------------|
+| [`GOOGLE_SESSION_AUTO_REFRESH`](../configuration/settings.md#google_session_auto_refresh) | `bool` | `True` | Master switch. `False` → **no silent refresh**; the session ends at the ID-token expiry and the user re-logs in. |
+| [`GOOGLE_SESSION_MAX_AGE`](../configuration/settings.md#google_session_max_age) | `int \| None` | `None` | **Absolute cap** (seconds). Refuse to extend a session older than `login_time + MAX_AGE`, even with a valid refresh token. |
+| [`GOOGLE_SESSION_IDLE_TIMEOUT`](../configuration/settings.md#google_session_idle_timeout) | `int \| None` | `None` | **Idle cap** (seconds). End a session that has been inactive longer than this window. |
+
+The three knobs are **independent and additive** — a session must satisfy *every*
+configured cap to be extended:
+
+```mermaid
+graph LR
+    A["AUTO_REFRESH=False<br/><small>expire at ~1h, re-login</small>"]
+    B["MAX_AGE=8h<br/><small>bounded rolling session</small>"]
+    C["IDLE_TIMEOUT=30m<br/><small>activity-based</small>"]
+    D["all defaults<br/><small>indefinite rolling session</small>"]
+    A --- B --- C --- D
+    style A fill:#f44336,color:white
+    style D fill:#4CAF50,color:white
+```
+
+!!! example "Common policies"
+    === "Consumer SPA (default)"
+
+        Keep users signed in as long as Google honours the refresh token.
+
+        ```python
+        # nothing to set — these are the defaults
+        GOOGLE_SESSION_AUTO_REFRESH = True
+        GOOGLE_SESSION_MAX_AGE = None
+        GOOGLE_SESSION_IDLE_TIMEOUT = None
+        ```
+
+    === "Compliance (hard cap)"
+
+        Force a fresh login at least every 8 hours, and sign out after 30 minutes
+        idle — regardless of a valid refresh token.
+
+        ```python
+        GOOGLE_SESSION_AUTO_REFRESH = True
+        GOOGLE_SESSION_MAX_AGE = 8 * 60 * 60      # 8 hours absolute
+        GOOGLE_SESSION_IDLE_TIMEOUT = 30 * 60     # 30 minutes idle
+        ```
+
+    === "No silent refresh"
+
+        The session ends when the ID token expires (~1 hour) and the user
+        re-authenticates. The strictest option.
+
+        ```python
+        GOOGLE_SESSION_AUTO_REFRESH = False
+        ```
+
+!!! abstract "How the caps are measured"
+    - **Absolute age** is anchored to a login timestamp stamped **once** at
+      `callback` time (`gauth_login_at`) and **never** moved on refresh.
+    - **Idle** is measured from the last successful `get_credentials()` call
+      (`gauth_last_active`), updated on each authenticated access **only when an
+      idle timeout is configured** (so there's no extra session write when the
+      feature is off).
+    - A **legacy session** created before you enabled a cap (and therefore missing
+      a stamp) is treated as *within* policy — enabling a cap never abruptly locks
+      out already–signed-in users.
+
+!!! note "Where policy is enforced"
+    The session policy is enforced by
+    [`get_credentials()`](../api/utilities.md#get_credentialsrequest) and therefore
+    by the `/gauth/session` probe — the documented, policy-aware source of truth.
+    The built-in `/gauth/` landing page performs a lightweight token-presence
+    check and is **not** the policy boundary; drive your app's auth state from
+    `/gauth/session`.
+
+---
+
 ## The `/gauth/session` probe :material-access-point:
 
 For SPA frontends, [`session_status()`](../api/views.md#session_statusrequest)
@@ -186,6 +266,9 @@ into either a server-rendered app or an SPA:
 
 | Setting | Type | Default | Effect |
 |---------|------|---------|--------|
+| [`GOOGLE_SESSION_AUTO_REFRESH`](../configuration/settings.md#google_session_auto_refresh) | `bool` | `True` | Master switch for transparent token refresh |
+| [`GOOGLE_SESSION_MAX_AGE`](../configuration/settings.md#google_session_max_age) | `int \| None` | `None` | Absolute session cap (seconds) |
+| [`GOOGLE_SESSION_IDLE_TIMEOUT`](../configuration/settings.md#google_session_idle_timeout) | `int \| None` | `None` | Idle timeout (seconds) |
 | [`GOOGLE_TOKEN_REVOKE_ON_LOGOUT`](../configuration/settings.md#google_token_revoke_on_logout) | `bool` | `True` | Revoke the Google token on logout |
 | [`GOOGLE_AUTH_LOGOUT_REDIRECT_URL`](../configuration/settings.md#google_auth_logout_redirect_url) | `str \| None` | `None` | Destination for `?response=redirect` logout (falls back to the index) |
 
