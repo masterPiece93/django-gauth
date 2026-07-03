@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-04
+
 ### Security
 
 - `oauth_state` (OAuth2 CSRF nonce) is now explicitly removed from the session on the
@@ -29,6 +31,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Django User Integration (issue #85)** — an opt-in bridge from the session-only Google
+  flow to Django's own auth system, so `request.user`, `@login_required`, and the admin
+  recognise Google-authenticated visitors — **with no `django-gauth` models and zero
+  migrations**. Off by default; enable with `GOOGLE_USER_INTEGRATION = True` and register
+  the backend.
+    - **`GoogleAuthBackend`** (`django_gauth.backends`) — a passive
+      `authenticate(request, id_info=...)` backend that maps a verified `id_info` to your
+      existing `AUTH_USER_MODEL` and returns `None` for password logins, so
+      `ModelBackend` keeps working alongside it.
+    - **`get_or_create_user_from_id_info(id_info)`** (`django_gauth.utilities`) —
+      model-free get-or-create keyed on a configurable lookup field (default `email`,
+      case-insensitive), hard-gated by verified email.
+    - **View seams** — `callback()` opens a Django auth session
+      (`authenticate()` + `login()`) when integration is enabled; `logout()` also calls
+      `auth.logout()`; and `session_status()` gains a top-level `user_id` (always present,
+      `null` unless integrated **and** authenticated).
+    - **`gauth_required` decorator** and **`GauthRequiredMixin`** (exported from
+      `django_gauth`) — dual-mode view guards (`request.user` when integrated, otherwise
+      the session check) that honour the `response=redirect|json` convention.
+    - **Five new settings** — `GOOGLE_USER_INTEGRATION`, `GOOGLE_USER_AUTO_CREATE`,
+      `GOOGLE_USER_LOOKUP_FIELD`, `GOOGLE_USER_REQUIRE_VERIFIED_EMAIL`, and
+      `GOOGLE_USER_MAPPER` (a dotted-path `(id_info, user, created) -> None` hook).
+    - **System check** — `manage.py check` warns (`django_gauth.W001`–`W003`) when
+      integration is enabled but `django.contrib.auth`, `AuthenticationMiddleware`, or
+      `GoogleAuthBackend` is missing.
+
+    See [Django User Integration](https://masterpiece93.github.io/django-gauth/concepts/django-user-integration/).
 - **Redirection Schemes (issue #77)** — nested & dynamic Google auth, out of the box.
   `login()` now accepts a `?scheme=` query parameter that controls how the post-auth
   destination is resolved, so users can be sent back to the exact page they
@@ -205,7 +234,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[Unreleased]: https://github.com/masterPiece93/django-gauth/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/masterPiece93/django-gauth/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/masterPiece93/django-gauth/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/masterPiece93/django-gauth/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/masterPiece93/django-gauth/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/masterPiece93/django-gauth/compare/v0.1.2...v0.2.0
