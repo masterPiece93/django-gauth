@@ -9,6 +9,11 @@ from copy import deepcopy
 from typing import Optional
 
 from django.conf import settings  # pylint: disable=import-error
+from django.contrib.auth import (
+    authenticate as django_authenticate,  # pylint: disable=import-error
+)
+from django.contrib.auth import login as django_login
+from django.contrib.auth import logout as django_logout
 from django.http import (  # pylint: disable=import-error
     HttpRequest,
     HttpResponseBadRequest,
@@ -29,6 +34,21 @@ from django_gauth.utilities import (
     get_credentials,
     revoke_google_token,
 )
+
+
+def _user_integration_enabled() -> bool:
+    """Return ``True`` when Django User integration (v0.3.0) is switched on.
+
+    Reads the ``GOOGLE_USER_INTEGRATION`` master switch, falling back to the
+    packaged default (``False``) so the seam is inert unless a project opts in.
+    """
+    return bool(
+        getattr(
+            settings,
+            "GOOGLE_USER_INTEGRATION",
+            defaults.GOOGLE_USER_INTEGRATION,
+        )
+    )
 
 
 def get_origin_url(
@@ -279,6 +299,18 @@ def callback(request: HttpRequest):  # type: ignore
         audience=settings.GOOGLE_CLIENT_ID,
         clock_skew_in_seconds=5,
     )
+    # Capture the post-login destination before any session-key rotation.
+    final_redirect = request.session[settings.FINAL_REDIRECT_KEY_NAME]
+
+    # Optional Django User integration (v0.3.0): resolve the verified id_info to
+    # a real auth_user and open a Django auth session, so request.user,
+    # @login_required and the admin recognize the visitor. login() may rotate
+    # the session key, so the Google session state is (re)written afterwards.
+    if _user_integration_enabled():
+        user = django_authenticate(request, id_info=id_info)
+        if user is not None:
+            django_login(request, user)
+
     # session setting
     request.session["id_info"] = id_info
     request.session[settings.CREDENTIALS_SESSION_KEY_NAME] = credentials_to_dict(
@@ -292,7 +324,7 @@ def callback(request: HttpRequest):  # type: ignore
     request.session.pop(settings.STATE_KEY_NAME, None)
 
     # redirecting to the final redirect (i.e., logged in page)
-    redirect_response = redirect(request.session[settings.FINAL_REDIRECT_KEY_NAME])
+    redirect_response = redirect(final_redirect)
 
     return redirect_response
 
@@ -332,8 +364,14 @@ def logout(request: HttpRequest):  # type: ignore
         if token:
             revoke_google_token(token)
 
-    # Clear the entire session (rotates the session key).
-    request.session.flush()
+    # Clear the entire session (rotates the session key). When Django User
+    # integration is active, route through auth.logout() so the
+    # user_logged_out signal fires and request.user resets to AnonymousUser;
+    # it flushes the session for us.
+    if _user_integration_enabled():
+        django_logout(request)
+    else:
+        request.session.flush()
 
     if response_type == "json":
         return JsonResponse({"status": "logged_out"})
@@ -351,20 +389,34 @@ def session_status(request: HttpRequest):  # type: ignore
     ~1 hour ID-token lifetime.
 
     Response shape:
-        ``{"authenticated": bool, "user": {...} | null}``
+        ``{"authenticated": bool, "user": {...} | null, "user_id": int | null}``
 
     The ``user`` payload is the sanitized ``id_info`` (opaque ``iss``/``azp``/
     ``aud``/``sub`` claims are stripped), matching the landing page and debug
     endpoint.
+
+    ``user_id`` is always present (v0.3.0). It carries the primary key of the
+    linked Django ``auth_user`` when :ref:`Django User integration
+    <GOOGLE_USER_INTEGRATION>` is enabled *and* ``request.user`` is
+    authenticated; otherwise it is ``null``. This lets a frontend correlate the
+    Google session with a server-side user without exposing the ``sub`` claim.
     """
+    # ADR-7: user_id is always present; null unless integration is on AND the
+    # Django auth session resolved a real user.
+    user_id = None
+    if _user_integration_enabled():
+        request_user = getattr(request, "user", None)
+        if request_user is not None and request_user.is_authenticated:
+            user_id = request_user.pk
+
     credentials = get_credentials(request)
     if credentials is None:
-        return JsonResponse({"authenticated": False, "user": None})
+        return JsonResponse({"authenticated": False, "user": None, "user_id": user_id})
 
     user_info = deepcopy(request.session.get("id_info", {}))
     for claim in ("iss", "azp", "aud", "sub"):
         user_info.pop(claim, None)
-    return JsonResponse({"authenticated": True, "user": user_info})
+    return JsonResponse({"authenticated": True, "user": user_info, "user_id": user_id})
 
 
 def debug_information(request: HttpRequest):  # type: ignore

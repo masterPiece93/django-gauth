@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 
 from django.conf import settings
 from django.contrib.sessions.models import Session
+from django.http import HttpResponse
 from django.test import TestCase, RequestFactory, override_settings
 from django.test.client import Client
 from django.urls import reverse
@@ -22,6 +23,7 @@ from django_gauth._checks import (
     ErrorCodes,
     check_project_middlewares,
     check_project_settings,
+    check_user_integration_requirements,
     formulate_check_id,
 )
 from django_gauth.utilities import (
@@ -51,6 +53,14 @@ class DefaultsTest(TestCase):
         self.assertTrue(defaults.GOOGLE_SESSION_AUTO_REFRESH)
         self.assertIsNone(defaults.GOOGLE_SESSION_MAX_AGE)
         self.assertIsNone(defaults.GOOGLE_SESSION_IDLE_TIMEOUT)
+
+    def test_user_integration_defaults(self):
+        # Django User integration (v0.3.0) — safe, opt-in defaults
+        self.assertFalse(defaults.GOOGLE_USER_INTEGRATION)
+        self.assertTrue(defaults.GOOGLE_USER_AUTO_CREATE)
+        self.assertEqual(defaults.GOOGLE_USER_LOOKUP_FIELD, "email")
+        self.assertTrue(defaults.GOOGLE_USER_REQUIRE_VERIFIED_EMAIL)
+        self.assertIsNone(defaults.GOOGLE_USER_MAPPER)
 
 
 # ============================================================
@@ -116,6 +126,77 @@ class ErrorCodesTest(TestCase):
 
     def test_formulate_check_id(self):
         self.assertEqual(formulate_check_id("E001"), "django_gauth.E001")
+
+
+class CheckUserIntegrationRequirementsTest(TestCase):
+    """Cover _checks.check_user_integration_requirements (v0.3.0 Phase 3)."""
+
+    def test_no_warnings_when_integration_disabled(self):
+        # Default: GOOGLE_USER_INTEGRATION is off → inert, empty result.
+        self.assertEqual(check_user_integration_requirements(app_configs=None), [])
+
+    @override_settings(
+        GOOGLE_USER_INTEGRATION=True,
+        AUTHENTICATION_BACKENDS=[
+            "django_gauth.backends.GoogleAuthBackend",
+            "django.contrib.auth.backends.ModelBackend",
+        ],
+    )
+    def test_no_warnings_when_fully_wired(self):
+        # auth app + AuthenticationMiddleware come from the base test settings.
+        self.assertEqual(check_user_integration_requirements(app_configs=None), [])
+
+    @override_settings(GOOGLE_USER_INTEGRATION=True)
+    def test_warns_when_backend_missing(self):
+        # Default AUTHENTICATION_BACKENDS = [ModelBackend] → GoogleAuthBackend absent.
+        errors = check_user_integration_requirements(app_configs=None)
+        ids = [e.id for e in errors]
+        self.assertIn(formulate_check_id(ErrorCodes.W003.name), ids)
+
+    @override_settings(
+        GOOGLE_USER_INTEGRATION=True,
+        MIDDLEWARE=[],
+        AUTHENTICATION_BACKENDS=[
+            "django_gauth.backends.GoogleAuthBackend",
+            "django.contrib.auth.backends.ModelBackend",
+        ],
+    )
+    def test_warns_when_auth_middleware_missing(self):
+        errors = check_user_integration_requirements(app_configs=None)
+        ids = [e.id for e in errors]
+        self.assertIn(formulate_check_id(ErrorCodes.W002.name), ids)
+
+    @override_settings(
+        GOOGLE_USER_INTEGRATION=True,
+        AUTHENTICATION_BACKENDS=[
+            "django_gauth.backends.GoogleAuthBackend",
+            "django.contrib.auth.backends.ModelBackend",
+        ],
+    )
+    def test_warns_when_auth_app_missing(self):
+        # Direct-assign INSTALLED_APPS (no registry reload) so the membership
+        # test sees auth absent; restored in finally + by override_settings exit.
+        original = list(settings.INSTALLED_APPS)
+        try:
+            settings.INSTALLED_APPS = [
+                app for app in original if app != "django.contrib.auth"
+            ]
+            errors = check_user_integration_requirements(app_configs=None)
+            ids = [e.id for e in errors]
+            self.assertIn(formulate_check_id(ErrorCodes.W001.name), ids)
+        finally:
+            settings.INSTALLED_APPS = original
+
+    def test_warning_codes_defined(self):
+        self.assertEqual(
+            ErrorCodes.W001.value[0], "MISSING_AUTH_APP_FOR_USER_INTEGRATION"
+        )
+        self.assertEqual(
+            ErrorCodes.W002.value[0], "MISSING_AUTH_MIDDLEWARE_FOR_USER_INTEGRATION"
+        )
+        self.assertEqual(
+            ErrorCodes.W003.value[0], "MISSING_AUTH_BACKEND_FOR_USER_INTEGRATION"
+        )
 
 
 # ============================================================
@@ -1664,3 +1745,600 @@ class SessionStatusViewTest(TestCase):
         data = json.loads(response.content)
         self.assertFalse(data["authenticated"])
         self.assertIsNone(data["user"])
+
+
+# ============================================================
+# utilities.py — get_or_create_user_from_id_info (v0.3.0 User integration)
+# ============================================================
+def _test_user_mapper(id_info, user, created):  # noqa: ARG001
+    """Module-level mapper used by the GOOGLE_USER_MAPPER test (dotted-path)."""
+    user.first_name = "MAPPED"
+    user.last_name = "created" if created else "existing"
+
+
+class GetOrCreateUserTest(TestCase):
+    """Cover utilities.get_or_create_user_from_id_info (model-free get-or-create)."""
+
+    def _verified(self, **extra):
+        info = {
+            "email": "alice@example.com",
+            "email_verified": True,
+            "given_name": "Alice",
+            "family_name": "Smith",
+        }
+        info.update(extra)
+        return info
+
+    def test_empty_id_info_returns_none(self):
+        from django_gauth.utilities import get_or_create_user_from_id_info
+
+        self.assertIsNone(get_or_create_user_from_id_info({}))
+
+    @override_settings(GOOGLE_USER_REQUIRE_VERIFIED_EMAIL=True)
+    def test_unverified_email_rejected(self):
+        from django_gauth.utilities import get_or_create_user_from_id_info
+
+        result = get_or_create_user_from_id_info(self._verified(email_verified=False))
+        self.assertIsNone(result)
+
+    @override_settings(GOOGLE_USER_REQUIRE_VERIFIED_EMAIL=False)
+    def test_unverified_allowed_when_not_required(self):
+        from django_gauth.utilities import get_or_create_user_from_id_info
+
+        user = get_or_create_user_from_id_info(self._verified(email_verified=False))
+        self.assertIsNotNone(user)
+        self.assertEqual(user.email, "alice@example.com")
+
+    def test_missing_email_returns_none(self):
+        from django_gauth.utilities import get_or_create_user_from_id_info
+
+        self.assertIsNone(get_or_create_user_from_id_info({"email_verified": True}))
+
+    def test_creates_user_when_absent(self):
+        from django.contrib.auth import get_user_model
+
+        from django_gauth.utilities import get_or_create_user_from_id_info
+
+        user_model = get_user_model()
+        self.assertFalse(
+            user_model.objects.filter(email="alice@example.com").exists()
+        )
+
+        user = get_or_create_user_from_id_info(self._verified())
+
+        self.assertIsNotNone(user)
+        self.assertEqual(user.email, "alice@example.com")
+        self.assertEqual(user.username, "alice")
+        # default mapper populated the name fields
+        self.assertEqual(user.first_name, "Alice")
+        self.assertEqual(user.last_name, "Smith")
+        # OAuth users authenticate via Google — never a local password
+        self.assertFalse(user.has_usable_password())
+
+    def test_returns_existing_user_without_creating(self):
+        from django.contrib.auth import get_user_model
+
+        from django_gauth.utilities import get_or_create_user_from_id_info
+
+        user_model = get_user_model()
+        existing = user_model.objects.create(
+            username="alice", email="alice@example.com"
+        )
+
+        user = get_or_create_user_from_id_info(self._verified())
+
+        self.assertEqual(user.pk, existing.pk)
+        self.assertEqual(
+            user_model.objects.filter(email="alice@example.com").count(), 1
+        )
+
+    def test_case_insensitive_match(self):
+        from django.contrib.auth import get_user_model
+
+        from django_gauth.utilities import get_or_create_user_from_id_info
+
+        user_model = get_user_model()
+        existing = user_model.objects.create(
+            username="alice", email="Alice@Example.com"
+        )
+
+        user = get_or_create_user_from_id_info(
+            self._verified(email="alice@example.com")
+        )
+        self.assertEqual(user.pk, existing.pk)
+
+    @override_settings(GOOGLE_USER_AUTO_CREATE=False)
+    def test_no_create_when_disabled_returns_none(self):
+        from django_gauth.utilities import get_or_create_user_from_id_info
+
+        self.assertIsNone(get_or_create_user_from_id_info(self._verified()))
+
+    def test_username_collision_is_uniquified(self):
+        from django.contrib.auth import get_user_model
+
+        from django_gauth.utilities import get_or_create_user_from_id_info
+
+        user_model = get_user_model()
+        # occupy the natural username 'alice' with a different account
+        user_model.objects.create(username="alice", email="someone-else@example.com")
+
+        user = get_or_create_user_from_id_info(
+            self._verified(email="alice@example.com")
+        )
+        self.assertEqual(user.email, "alice@example.com")
+        self.assertNotEqual(user.username, "alice")
+        self.assertTrue(user.username.startswith("alice"))
+
+    @override_settings(GOOGLE_USER_LOOKUP_FIELD="username")
+    def test_custom_lookup_field_missing_value_returns_none(self):
+        from django_gauth.utilities import get_or_create_user_from_id_info
+
+        # id_info carries no 'username' claim → no lookup value → refuse sign-in
+        self.assertIsNone(get_or_create_user_from_id_info(self._verified()))
+
+    @override_settings(
+        GOOGLE_USER_MAPPER="tests.test_coverage_boost._test_user_mapper"
+    )
+    def test_custom_mapper_applied(self):
+        from django_gauth.utilities import get_or_create_user_from_id_info
+
+        user = get_or_create_user_from_id_info(self._verified())
+        self.assertEqual(user.first_name, "MAPPED")
+        self.assertEqual(user.last_name, "created")
+
+    def test_build_new_user_email_as_username_branch(self):
+        # Directly exercise the "email is the username" branch of _build_new_user
+        from django_gauth.utilities import _build_new_user
+
+        fake_model = MagicMock()
+        fake_model.USERNAME_FIELD = "email"
+        fake_model.EMAIL_FIELD = "email"
+
+        _build_new_user(fake_model, "eva@example.com")
+
+        fake_model.assert_called_once_with(email="eva@example.com")
+        fake_model.return_value.set_unusable_password.assert_called_once()
+
+
+# ============================================================
+# backends.py — GoogleAuthBackend (v0.3.0 User integration)
+# ============================================================
+class GoogleAuthBackendTest(TestCase):
+    """Cover backends.GoogleAuthBackend"""
+
+    def test_authenticate_without_id_info_opts_out(self):
+        from django_gauth.backends import GoogleAuthBackend
+
+        # No id_info → backend must stay passive so ModelBackend can handle it
+        self.assertIsNone(GoogleAuthBackend().authenticate(None, id_info=None))
+
+    @patch("django_gauth.backends.get_or_create_user_from_id_info")
+    def test_authenticate_returns_active_user(self, mock_goc):
+        from django_gauth.backends import GoogleAuthBackend
+
+        user = MagicMock()
+        user.is_active = True
+        mock_goc.return_value = user
+
+        result = GoogleAuthBackend().authenticate(None, id_info={"email": "a@b.com"})
+        self.assertIs(result, user)
+
+    @patch("django_gauth.backends.get_or_create_user_from_id_info")
+    def test_authenticate_returns_none_when_user_refused(self, mock_goc):
+        from django_gauth.backends import GoogleAuthBackend
+
+        mock_goc.return_value = None
+        result = GoogleAuthBackend().authenticate(None, id_info={"email": "a@b.com"})
+        self.assertIsNone(result)
+
+    @patch("django_gauth.backends.get_or_create_user_from_id_info")
+    def test_authenticate_rejects_inactive_user(self, mock_goc):
+        from django_gauth.backends import GoogleAuthBackend
+
+        user = MagicMock()
+        user.is_active = False
+        mock_goc.return_value = user
+
+        result = GoogleAuthBackend().authenticate(None, id_info={"email": "a@b.com"})
+        self.assertIsNone(result)
+
+    def test_get_user_returns_existing(self):
+        from django.contrib.auth import get_user_model
+
+        from django_gauth.backends import GoogleAuthBackend
+
+        user_model = get_user_model()
+        user = user_model.objects.create(username="bob", email="bob@example.com")
+
+        self.assertEqual(GoogleAuthBackend().get_user(user.pk), user)
+
+    def test_get_user_missing_returns_none(self):
+        from django_gauth.backends import GoogleAuthBackend
+
+        self.assertIsNone(GoogleAuthBackend().get_user(999999))
+
+
+# ============================================================
+# views.py — callback + Django User integration (v0.3.0, Phase 2)
+# ============================================================
+class CallbackUserIntegrationTest(TestCase):
+    """Cover views.callback's opt-in authenticate()/login() seam."""
+
+    def setUp(self):
+        self.factory = RequestFactory()
+
+    def _mock_flow(self, mock_flow_class):
+        mock_flow_instance = MagicMock()
+        mock_flow_class.return_value = mock_flow_instance
+        creds = MagicMock()
+        creds.token = "access_token"
+        creds.refresh_token = "refresh_token"
+        creds.token_uri = "https://oauth2.googleapis.com/token"
+        creds.client_id = settings.GOOGLE_CLIENT_ID
+        creds.client_secret = settings.GOOGLE_CLIENT_SECRET
+        creds.scopes = ["openid"]
+        creds.id_token = "fake_id_token"
+        mock_flow_instance.credentials = creds
+        return mock_flow_instance
+
+    def _request(self):
+        from django.contrib.auth.models import AnonymousUser
+        from django.contrib.sessions.backends.db import SessionStore
+
+        request = self.factory.get(
+            "/gauth/login-callback?state=test_state&code=test_code"
+        )
+        session = SessionStore()
+        session[settings.STATE_KEY_NAME] = "test_state"
+        session[settings.FINAL_REDIRECT_KEY_NAME] = "http://testserver/gauth/"
+        session.create()
+        request.session = session
+        request.user = AnonymousUser()  # emulate AuthenticationMiddleware
+        return request
+
+    @override_settings(
+        GOOGLE_USER_INTEGRATION=True,
+        AUTHENTICATION_BACKENDS=[
+            "django_gauth.backends.GoogleAuthBackend",
+            "django.contrib.auth.backends.ModelBackend",
+        ],
+    )
+    @patch("django_gauth.views.id_token.verify_oauth2_token")
+    @patch("django_gauth.views.Flow.from_client_config")
+    def test_callback_logs_in_django_user_when_integrated(
+        self, mock_flow_class, mock_verify
+    ):
+        from django.contrib.auth import SESSION_KEY, get_user_model
+
+        from django_gauth.views import callback
+
+        self._mock_flow(mock_flow_class)
+        mock_verify.return_value = {
+            "email": "carol@example.com",
+            "email_verified": True,
+            "given_name": "Carol",
+            "family_name": "Jones",
+            "exp": time.time() + 3600,
+        }
+        request = self._request()
+
+        response = callback(request)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, "http://testserver/gauth/")
+        # A real auth_user was created + a Django auth session was opened.
+        user = get_user_model().objects.get(email="carol@example.com")
+        self.assertEqual(request.session[SESSION_KEY], str(user.pk))
+        self.assertEqual(request.user, user)
+        # Google session state still lives alongside the Django auth session.
+        self.assertIn("id_info", request.session)
+        self.assertIn(settings.CREDENTIALS_SESSION_KEY_NAME, request.session)
+
+    @override_settings(
+        GOOGLE_USER_INTEGRATION=True,
+        GOOGLE_USER_REQUIRE_VERIFIED_EMAIL=True,
+        AUTHENTICATION_BACKENDS=[
+            "django_gauth.backends.GoogleAuthBackend",
+            "django.contrib.auth.backends.ModelBackend",
+        ],
+    )
+    @patch("django_gauth.views.id_token.verify_oauth2_token")
+    @patch("django_gauth.views.Flow.from_client_config")
+    def test_callback_skips_login_when_user_refused(
+        self, mock_flow_class, mock_verify
+    ):
+        from django.contrib.auth import SESSION_KEY
+
+        from django_gauth.views import callback
+
+        self._mock_flow(mock_flow_class)
+        # Unverified email → backend returns None → no login, flow still completes.
+        mock_verify.return_value = {
+            "email": "dan@example.com",
+            "email_verified": False,
+            "exp": time.time() + 3600,
+        }
+        request = self._request()
+
+        response = callback(request)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertNotIn(SESSION_KEY, request.session)
+        # Google session state is still written even though no Django login.
+        self.assertIn("id_info", request.session)
+        self.assertIn(settings.CREDENTIALS_SESSION_KEY_NAME, request.session)
+
+
+# ============================================================
+# views.py — logout + Django User integration (v0.3.0, Phase 2)
+# ============================================================
+class LogoutUserIntegrationTest(TestCase):
+    """Cover views.logout routing through auth.logout() when integrated."""
+
+    def setUp(self):
+        self.client = Client()
+
+    @override_settings(GOOGLE_USER_INTEGRATION=True)
+    def test_logout_clears_django_auth_session(self):
+        from django.contrib.auth import SESSION_KEY, get_user_model
+
+        user = get_user_model().objects.create(
+            username="erin", email="erin@example.com"
+        )
+        self.client.force_login(user)
+        # sanity: the Django auth session key exists before logout
+        self.assertIn(SESSION_KEY, self.client.session)
+
+        response = self.client.get(reverse("django_gauth:logout") + "?response=json")
+        self.assertEqual(response.status_code, 200)
+        # auth.logout() flushed the session → Django auth key is gone.
+        self.assertNotIn(SESSION_KEY, self.client.session)
+
+
+# ============================================================
+# views.py — session_status user_id field (v0.3.0, ADR-7, Phase 2)
+# ============================================================
+class SessionStatusUserIdTest(TestCase):
+    """Cover the ADR-7 top-level user_id field in session_status."""
+
+    def setUp(self):
+        self.client = Client()
+
+    @patch("django_gauth.views.get_credentials")
+    def test_user_id_present_and_null_when_integration_off(self, mock_get_credentials):
+        import json
+
+        mock_get_credentials.return_value = MagicMock()  # Google-authenticated
+        session = self.client.session
+        session["id_info"] = {"email": "f@example.com"}
+        session.save()
+
+        response = self.client.get(reverse("django_gauth:session"))
+        data = json.loads(response.content)
+        self.assertTrue(data["authenticated"])
+        self.assertIn("user_id", data)  # ADR-7: always present
+        self.assertIsNone(data["user_id"])  # ...null unless integrated + authed
+
+    @override_settings(GOOGLE_USER_INTEGRATION=True)
+    @patch("django_gauth.views.get_credentials")
+    def test_user_id_null_when_integrated_but_anonymous(self, mock_get_credentials):
+        import json
+
+        mock_get_credentials.return_value = None  # unauthenticated
+        response = self.client.get(reverse("django_gauth:session"))
+        data = json.loads(response.content)
+        self.assertFalse(data["authenticated"])
+        self.assertIn("user_id", data)
+        self.assertIsNone(data["user_id"])
+
+    @override_settings(GOOGLE_USER_INTEGRATION=True)
+    @patch("django_gauth.views.get_credentials")
+    def test_user_id_populated_when_integrated_and_authed(self, mock_get_credentials):
+        import json
+
+        from django.contrib.auth import get_user_model
+
+        user = get_user_model().objects.create(
+            username="gwen", email="gwen@example.com"
+        )
+        self.client.force_login(user)
+        mock_get_credentials.return_value = MagicMock()
+        session = self.client.session
+        session["id_info"] = {"email": "gwen@example.com"}
+        session.save()
+
+        response = self.client.get(reverse("django_gauth:session"))
+        data = json.loads(response.content)
+        self.assertTrue(data["authenticated"])
+        self.assertEqual(data["user_id"], user.pk)
+
+    @override_settings(GOOGLE_USER_INTEGRATION=True)
+    @patch("django_gauth.views.get_credentials")
+    def test_user_id_set_even_without_google_credentials(self, mock_get_credentials):
+        """Django-authenticated (e.g. admin) but no Google session → user_id set."""
+        import json
+
+        from django.contrib.auth import get_user_model
+
+        user = get_user_model().objects.create(
+            username="hank", email="hank@example.com"
+        )
+        self.client.force_login(user)
+        mock_get_credentials.return_value = None  # no Google credentials
+
+        response = self.client.get(reverse("django_gauth:session"))
+        data = json.loads(response.content)
+        self.assertFalse(data["authenticated"])  # no Google creds
+        self.assertEqual(data["user_id"], user.pk)  # but Django user is known
+
+
+# ============================================================
+# decorators.py — gauth_required (v0.3.0 Phase 4)
+# ============================================================
+def _protected_ok_view(request):  # noqa: ARG001
+    """Dummy protected view used by the decorator/mixin tests."""
+    return HttpResponse("ok")
+
+
+class GauthRequiredDecoratorTest(TestCase):
+    """Cover decorators.gauth_required (dual-mode + response=redirect|json)."""
+
+    def setUp(self):
+        self.factory = RequestFactory()
+
+    @patch("django_gauth.decorators.check_gauth_authentication")
+    def test_allows_authenticated_session(self, mock_check):
+        from django_gauth.decorators import gauth_required
+
+        mock_check.return_value = (True, object())  # session-only auth OK
+        protected = gauth_required(_protected_ok_view)  # bare usage
+        request = self.factory.get("/protected/")
+        request.session = {}
+
+        response = protected(request)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"ok")
+
+    @patch("django_gauth.decorators.check_gauth_authentication")
+    def test_redirects_unauthenticated(self, mock_check):
+        from django_gauth.decorators import gauth_required
+
+        mock_check.return_value = (False, None)
+        protected = gauth_required(_protected_ok_view)
+        request = self.factory.get("/protected/")
+        request.session = {}
+
+        response = protected(request)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse("django_gauth:login"), response.url)
+
+    @patch("django_gauth.decorators.check_gauth_authentication")
+    def test_json_response_when_unauthenticated(self, mock_check):
+        import json
+
+        from django_gauth.decorators import gauth_required
+
+        mock_check.return_value = (False, None)
+        protected = gauth_required(response="json")(_protected_ok_view)  # parameterised
+        request = self.factory.get("/protected/")
+        request.session = {}
+
+        response = protected(request)
+        self.assertEqual(response.status_code, 401)
+        self.assertFalse(json.loads(response.content)["authenticated"])
+
+    @patch("django_gauth.decorators.check_gauth_authentication")
+    def test_custom_login_url(self, mock_check):
+        from django_gauth.decorators import gauth_required
+
+        mock_check.return_value = (False, None)
+        protected = gauth_required(login_url="/accounts/login/")(_protected_ok_view)
+        request = self.factory.get("/protected/")
+        request.session = {}
+
+        response = protected(request)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, "/accounts/login/")
+
+    def test_invalid_response_raises(self):
+        from django_gauth.decorators import gauth_required
+
+        with self.assertRaises(ValueError):
+            gauth_required(response="xml")
+
+    @override_settings(GOOGLE_USER_INTEGRATION=True)
+    def test_integration_allows_authenticated_user(self):
+        from django_gauth.decorators import gauth_required
+
+        protected = gauth_required(_protected_ok_view)
+        request = self.factory.get("/protected/")
+        user = MagicMock()
+        user.is_authenticated = True
+        request.user = user
+
+        response = protected(request)
+        self.assertEqual(response.status_code, 200)
+
+    @override_settings(GOOGLE_USER_INTEGRATION=True)
+    def test_integration_blocks_anonymous_user(self):
+        from django.contrib.auth.models import AnonymousUser
+
+        from django_gauth.decorators import gauth_required
+
+        protected = gauth_required(response="json")(_protected_ok_view)
+        request = self.factory.get("/protected/")
+        request.user = AnonymousUser()
+
+        response = protected(request)
+        self.assertEqual(response.status_code, 401)
+
+
+class GauthRequiredMixinTest(TestCase):
+    """Cover decorators.GauthRequiredMixin (dual-mode dispatch guard)."""
+
+    def setUp(self):
+        self.factory = RequestFactory()
+
+    def _make_view(self, **attrs):
+        from django.views import View
+
+        from django_gauth.decorators import GauthRequiredMixin
+
+        class _Protected(GauthRequiredMixin, View):
+            def get(self, request, *args, **kwargs):  # noqa: ARG002
+                return HttpResponse("ok")
+
+        for key, value in attrs.items():
+            setattr(_Protected, key, value)
+        return _Protected.as_view()
+
+    @patch("django_gauth.decorators.check_gauth_authentication")
+    def test_mixin_allows_authenticated(self, mock_check):
+        mock_check.return_value = (True, object())
+        view = self._make_view()
+        request = self.factory.get("/p/")
+        request.session = {}
+
+        response = view(request)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"ok")
+
+    @patch("django_gauth.decorators.check_gauth_authentication")
+    def test_mixin_redirects_unauthenticated(self, mock_check):
+        mock_check.return_value = (False, None)
+        view = self._make_view()
+        request = self.factory.get("/p/")
+        request.session = {}
+
+        response = view(request)
+        self.assertEqual(response.status_code, 302)
+
+    @patch("django_gauth.decorators.check_gauth_authentication")
+    def test_mixin_json_unauthenticated(self, mock_check):
+        mock_check.return_value = (False, None)
+        view = self._make_view(gauth_response="json")
+        request = self.factory.get("/p/")
+        request.session = {}
+
+        response = view(request)
+        self.assertEqual(response.status_code, 401)
+
+    def test_mixin_invalid_response_raises(self):
+        view = self._make_view(gauth_response="xml")
+        request = self.factory.get("/p/")
+        request.session = {}
+
+        with self.assertRaises(ValueError):
+            view(request)
+
+    @override_settings(GOOGLE_USER_INTEGRATION=True)
+    def test_mixin_integration_blocks_anonymous(self):
+        from django.contrib.auth.models import AnonymousUser
+
+        view = self._make_view(gauth_response="json")
+        request = self.factory.get("/p/")
+        request.user = AnonymousUser()
+
+        response = view(request)
+        self.assertEqual(response.status_code, 401)
+

@@ -4,6 +4,8 @@ from typing import Any, Dict, Optional, Tuple, Union
 from urllib.parse import urlencode, urlparse
 
 from django.conf import Settings, settings  # pylint: disable=E0401
+from django.contrib.auth import get_user_model  # pylint: disable=E0401
+from django.utils.module_loading import import_string  # pylint: disable=E0401
 from google.auth.transport import requests as google_requests  # pylint: disable=E0401
 from google.oauth2 import id_token  # pylint: disable=E0401
 from google.oauth2.credentials import Credentials  # pylint: disable=E0401
@@ -20,6 +22,7 @@ __all__ = [
     "get_credentials",
     "SESSION_LOGIN_AT_KEY",
     "SESSION_LAST_ACTIVE_KEY",
+    "get_or_create_user_from_id_info",
 ]
 
 # Internal session bookkeeping keys used by the session-policy layer.
@@ -271,3 +274,132 @@ def get_credentials(request: Any) -> Optional[Credentials]:
     if hasattr(session, "modified"):
         session.modified = True
     return credentials
+
+
+def _resolve_user_setting(name: str) -> Any:
+    """Read a ``GOOGLE_USER_*`` setting, falling back to the package default."""
+    return getattr(settings, name, getattr(defaults, name))
+
+
+def _unique_username(user_model: Any, email: str) -> str:
+    """Derive a unique ``USERNAME_FIELD`` value from an email's local-part.
+
+    Used only when auto-creating a ``User`` whose username field differs from
+    its email field (e.g. the stock ``auth.User``). Collisions are resolved with
+    an incrementing numeric suffix, respecting the field's ``max_length``.
+    """
+    username_field = user_model.USERNAME_FIELD
+    # pylint: disable=protected-access
+    max_length = user_model._meta.get_field(username_field).max_length or 150
+    base = (email.split("@", 1)[0] or "user")[:max_length]
+    candidate = base
+    suffix = 1
+    while user_model.objects.filter(
+        **{f"{username_field}__iexact": candidate}
+    ).exists():
+        tail = str(suffix)
+        candidate = f"{base[: max_length - len(tail)]}{tail}"
+        suffix += 1
+    return candidate
+
+
+def _build_new_user(user_model: Any, email: str) -> Any:
+    """Instantiate (but do not save) a new ``User`` with the minimum fields.
+
+    Respects ``AUTH_USER_MODEL`` conventions (``USERNAME_FIELD`` / ``EMAIL_FIELD``)
+    and marks the password unusable — OAuth users authenticate via Google, never
+    a local password.
+    """
+    username_field = user_model.USERNAME_FIELD
+    email_field = getattr(user_model, "EMAIL_FIELD", "email")
+
+    new_user_kwargs: Dict[str, Any] = {}
+    if email_field:
+        new_user_kwargs[email_field] = email
+    if username_field == email_field:
+        new_user_kwargs[username_field] = email
+    else:
+        new_user_kwargs[username_field] = _unique_username(user_model, email)
+
+    user = user_model(**new_user_kwargs)
+    user.set_unusable_password()
+    return user
+
+
+def _default_user_mapper(id_info: Dict[str, Any], user: Any) -> None:
+    """Populate common name fields from Google claims when they are empty."""
+    if hasattr(user, "first_name") and not getattr(user, "first_name", ""):
+        user.first_name = id_info.get("given_name", "")
+    if hasattr(user, "last_name") and not getattr(user, "last_name", ""):
+        user.last_name = id_info.get("family_name", "")
+
+
+def _apply_user_mapper(id_info: Dict[str, Any], user: Any, created: bool) -> None:
+    """Dispatch to the configured ``GOOGLE_USER_MAPPER`` or the default mapper."""
+    mapper_path = _resolve_user_setting("GOOGLE_USER_MAPPER")
+    if mapper_path:
+        import_string(mapper_path)(id_info, user, created)
+    else:
+        _default_user_mapper(id_info, user)
+
+
+def get_or_create_user_from_id_info(id_info: Dict[str, Any]) -> Optional[Any]:
+    """Resolve a Django ``User`` from a verified Google ``id_info`` payload.
+
+    This is the model-free bridge behind
+    :class:`django_gauth.backends.GoogleAuthBackend`. It never creates any
+    django-gauth tables — it get-or-creates the project's own ``User``
+    (respecting ``AUTH_USER_MODEL``) keyed on a configurable, case-insensitive
+    field.
+
+    Behaviour is governed by:
+        - ``GOOGLE_USER_REQUIRE_VERIFIED_EMAIL`` — reject unverified emails.
+        - ``GOOGLE_USER_LOOKUP_FIELD`` — the field matched (case-insensitive).
+        - ``GOOGLE_USER_AUTO_CREATE`` — create on first login, or login-only.
+        - ``GOOGLE_USER_MAPPER`` — dotted path to a field-population hook.
+
+    Args:
+        id_info: The verified ID-token claims from Google.
+
+    Returns:
+        The matched or newly-created ``User``, or ``None`` when sign-in must be
+        refused (unverified email, missing lookup value, or no match while
+        auto-create is disabled).
+    """
+    if not id_info:
+        return None
+
+    # 1. Verified-email guard — the primary anti-account-takeover control.
+    require_verified = _resolve_user_setting("GOOGLE_USER_REQUIRE_VERIFIED_EMAIL")
+    if require_verified and not id_info.get("email_verified"):
+        return None
+
+    email = id_info.get("email")
+    if not email:
+        return None
+
+    user_model = get_user_model()
+    lookup_field = _resolve_user_setting("GOOGLE_USER_LOOKUP_FIELD") or "email"
+    lookup_value = email if lookup_field == "email" else id_info.get(lookup_field)
+    if not lookup_value:
+        return None
+
+    # 2. Case-insensitive lookup against the project's own User table.
+    user = user_model.objects.filter(
+        **{f"{lookup_field}__iexact": lookup_value}
+    ).first()
+    created = False
+
+    # 3. Get-or-create (creation is opt-in via GOOGLE_USER_AUTO_CREATE).
+    if user is None:
+        if not _resolve_user_setting("GOOGLE_USER_AUTO_CREATE"):
+            return None
+        user = _build_new_user(user_model, email)
+        created = True
+
+    # 4. Populate fields via the configured (or default) mapper.
+    _apply_user_mapper(id_info, user, created)
+
+    # 5. Persist (mapper changes apply to existing users too).
+    user.save()
+    return user
