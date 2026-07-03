@@ -18,6 +18,7 @@ from django_gauth.utilities import (
     is_valid_google_url,
     get_credentials,
     revoke_google_token,
+    get_or_create_user_from_id_info,
 )
 ```
 
@@ -246,4 +247,47 @@ revoke_google_token("")                        # False (nothing to revoke)
 !!! info "Never raises"
     This helper is intentionally forgiving so a logout is never blocked by an upstream
     hiccup. Check the return value if you need to know whether revocation succeeded.
+
+---
+
+## `get_or_create_user_from_id_info(id_info)`
+
+Model-free get-or-create that maps a **verified** Google `id_info` to a row in your
+existing `AUTH_USER_MODEL`. This is the building block behind
+[`GoogleAuthBackend`](backends.md) and the [Django User Integration](../concepts/django-user-integration.md)
+feature — it adds **no models and no migrations** of its own.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `id_info` | `dict` | The decoded, verified ID-token claims (from `callback()`) |
+
+**Returns:** `Optional[User]` — the matched or newly-created user, or `None` when the
+identity is refused.
+
+The resolution flow honours the [`GOOGLE_USER_*` settings](../configuration/settings.md#django-user-integration-settings):
+
+1. **Verified-email guard** — if `GOOGLE_USER_REQUIRE_VERIFIED_EMAIL` is `True` (default)
+   and the `email_verified` claim is falsy → `None`.
+2. **Email presence** — no `email` claim → `None`.
+3. **Case-insensitive lookup** — find a user by `{GOOGLE_USER_LOOKUP_FIELD}__iexact`.
+4. **Create if absent** — when no match and `GOOGLE_USER_AUTO_CREATE` is `True`, build a
+   new user (unusable password, collision-safe username); otherwise → `None`.
+5. **Mapper + save** — apply `GOOGLE_USER_MAPPER` (or the built-in name mapper) and
+   `save()`.
+
+```python
+from django_gauth.utilities import get_or_create_user_from_id_info
+
+user = get_or_create_user_from_id_info(request.session["id_info"])
+if user is not None:
+    login(request, user)
+```
+
+!!! tip "You rarely call this directly"
+    With `GOOGLE_USER_INTEGRATION = True` the [`callback()`](views.md#callbackrequest)
+    view calls it for you through `authenticate()`. Reach for it directly only when
+    building a custom auth flow.
+
 
