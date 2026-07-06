@@ -44,6 +44,13 @@ class DefaultsTest(TestCase):
         self.assertEqual(defaults.STATE_KEY_NAME, "oauth_state")
         self.assertEqual(defaults.FINAL_REDIRECT_KEY_NAME, "final_redirect")
         self.assertEqual(defaults.GOOGLE_LOGIN_PROMPT, "select_account consent")
+        # session lifecycle (v0.4.0)
+        self.assertTrue(defaults.GOOGLE_TOKEN_REVOKE_ON_LOGOUT)
+        self.assertIsNone(defaults.GOOGLE_AUTH_LOGOUT_REDIRECT_URL)
+        # session policy (v0.4.0)
+        self.assertTrue(defaults.GOOGLE_SESSION_AUTO_REFRESH)
+        self.assertIsNone(defaults.GOOGLE_SESSION_MAX_AGE)
+        self.assertIsNone(defaults.GOOGLE_SESSION_IDLE_TIMEOUT)
 
 
 # ============================================================
@@ -968,6 +975,10 @@ class CallbackViewTest(TestCase):
         # Verify session was populated
         self.assertIn("id_info", request.session)
         self.assertIn(settings.CREDENTIALS_SESSION_KEY_NAME, request.session)
+        # session lifecycle: the login time is stamped as the absolute-age anchor
+        from django_gauth.utilities import SESSION_LOGIN_AT_KEY
+
+        self.assertIn(SESSION_LOGIN_AT_KEY, request.session)
         # ISSUE-3 regression: callback must read the public ``id_token`` property,
         # not the private ``_id_token`` attribute.
         self.assertEqual(mock_verify.call_args.kwargs["id_token"], "fake_id_token")
@@ -1379,6 +1390,176 @@ class GetCredentialsTest(TestCase):
         }
         result = get_credentials(self._request(session))
         self.assertIsNone(result)
+
+
+# ============================================================
+# utilities.py — session policy (v0.4.0)
+#   GOOGLE_SESSION_AUTO_REFRESH / MAX_AGE / IDLE_TIMEOUT
+# ============================================================
+class SessionPolicyTest(TestCase):
+    """Cover the configurable session-policy layer in get_credentials."""
+
+    def setUp(self):
+        self.factory = RequestFactory()
+
+    def _request(self, session):
+        request = self.factory.get("/gauth/session")
+        request.session = session
+        return request
+
+    def _valid_session(self, **extra):
+        session = {
+            settings.CREDENTIALS_SESSION_KEY_NAME: {
+                "token": "tok",
+                "refresh_token": "rtok",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "scopes": ["openid"],
+            },
+            "id_info": {"exp": time.time() + 3600},  # not expired
+        }
+        session.update(extra)
+        return session
+
+    def _expired_session(self, **extra):
+        session = self._valid_session()
+        session["id_info"] = {"exp": time.time() - 100}  # expired
+        session.update(extra)
+        return session
+
+    @override_settings(GOOGLE_SESSION_AUTO_REFRESH=False)
+    @patch("django_gauth.utilities.Credentials")
+    def test_auto_refresh_disabled_skips_refresh(self, mock_credentials_class):
+        from django_gauth.utilities import get_credentials
+
+        inst = MagicMock()
+        inst.valid = True
+        mock_credentials_class.return_value = inst
+
+        # token expired, refresh_token present — but refresh is switched off
+        session = self._expired_session()
+        result = get_credentials(self._request(session))
+
+        self.assertIsNone(result)
+        inst.refresh.assert_not_called()
+
+    @override_settings(GOOGLE_SESSION_MAX_AGE=1800)
+    @patch("django_gauth.utilities.Credentials")
+    def test_max_age_exceeded_expires_valid_session(self, mock_credentials_class):
+        from django_gauth.utilities import SESSION_LOGIN_AT_KEY, get_credentials
+
+        inst = MagicMock()
+        inst.valid = True
+        mock_credentials_class.return_value = inst
+
+        # the token itself is still valid, but the session is older than the cap
+        session = self._valid_session(**{SESSION_LOGIN_AT_KEY: time.time() - 3600})
+        result = get_credentials(self._request(session))
+
+        self.assertIsNone(result)
+        inst.refresh.assert_not_called()
+
+    @override_settings(GOOGLE_SESSION_MAX_AGE=3600)
+    @patch("django_gauth.utilities.Credentials")
+    def test_max_age_within_bounds_returns_credentials(self, mock_credentials_class):
+        from django_gauth.utilities import SESSION_LOGIN_AT_KEY, get_credentials
+
+        inst = MagicMock()
+        inst.valid = True
+        mock_credentials_class.return_value = inst
+
+        session = self._valid_session(**{SESSION_LOGIN_AT_KEY: time.time() - 100})
+        result = get_credentials(self._request(session))
+
+        self.assertEqual(result, inst)
+
+    @override_settings(GOOGLE_SESSION_MAX_AGE=1800)
+    @patch("django_gauth.utilities.Credentials")
+    def test_max_age_missing_login_stamp_is_satisfied(self, mock_credentials_class):
+        """A legacy session without a login stamp must not be locked out."""
+        from django_gauth.utilities import get_credentials
+
+        inst = MagicMock()
+        inst.valid = True
+        mock_credentials_class.return_value = inst
+
+        session = self._valid_session()  # no SESSION_LOGIN_AT_KEY
+        result = get_credentials(self._request(session))
+
+        self.assertEqual(result, inst)
+
+    @override_settings(GOOGLE_SESSION_IDLE_TIMEOUT=900)
+    @patch("django_gauth.utilities.Credentials")
+    def test_idle_timeout_exceeded_expires_session(self, mock_credentials_class):
+        from django_gauth.utilities import SESSION_LAST_ACTIVE_KEY, get_credentials
+
+        inst = MagicMock()
+        inst.valid = True
+        mock_credentials_class.return_value = inst
+
+        session = self._valid_session(**{SESSION_LAST_ACTIVE_KEY: time.time() - 1000})
+        result = get_credentials(self._request(session))
+
+        self.assertIsNone(result)
+
+    @override_settings(GOOGLE_SESSION_IDLE_TIMEOUT=1800)
+    @patch("django_gauth.utilities.Credentials")
+    def test_idle_timeout_touches_last_active(self, mock_credentials_class):
+        from django_gauth.utilities import SESSION_LAST_ACTIVE_KEY, get_credentials
+
+        inst = MagicMock()
+        inst.valid = True
+        mock_credentials_class.return_value = inst
+
+        old = time.time() - 100
+        session = self._valid_session(**{SESSION_LAST_ACTIVE_KEY: old})
+        result = get_credentials(self._request(session))
+
+        self.assertEqual(result, inst)
+        # a successful access must move the idle clock forward
+        self.assertGreater(session[SESSION_LAST_ACTIVE_KEY], old)
+
+    @override_settings(GOOGLE_SESSION_IDLE_TIMEOUT=1800)
+    @patch("django_gauth.utilities.Credentials")
+    def test_idle_timeout_flags_real_session_modified(self, mock_credentials_class):
+        """Touching last-active on a real Django session flags it ``modified``."""
+        from django.contrib.sessions.backends.signed_cookies import SessionStore
+
+        from django_gauth.utilities import SESSION_LAST_ACTIVE_KEY, get_credentials
+
+        inst = MagicMock()
+        inst.valid = True
+        mock_credentials_class.return_value = inst
+
+        session = SessionStore()
+        session[settings.CREDENTIALS_SESSION_KEY_NAME] = {
+            "token": "tok",
+            "refresh_token": "rtok",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "scopes": ["openid"],
+        }
+        session["id_info"] = {"exp": time.time() + 3600}
+        session[SESSION_LAST_ACTIVE_KEY] = time.time() - 100
+        session.modified = False  # reset flag after seeding
+
+        result = get_credentials(self._request(session))
+
+        self.assertEqual(result, inst)
+        # the last-active write must re-flag the real session as modified
+        self.assertTrue(session.modified)
+
+    @patch("django_gauth.utilities.Credentials")
+    def test_no_idle_timeout_does_not_write_last_active(self, mock_credentials_class):
+        """With idle timeout off, no last-active key is written (no extra save)."""
+        from django_gauth.utilities import SESSION_LAST_ACTIVE_KEY, get_credentials
+
+        inst = MagicMock()
+        inst.valid = True
+        mock_credentials_class.return_value = inst
+
+        session = self._valid_session()
+        get_credentials(self._request(session))
+
+        self.assertNotIn(SESSION_LAST_ACTIVE_KEY, session)
 
 
 # ============================================================

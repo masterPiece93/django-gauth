@@ -3,6 +3,7 @@ Auth Api's
 ~@ankit.kumar05
 """
 
+import time
 import urllib.parse
 from copy import deepcopy
 from typing import Optional
@@ -21,6 +22,7 @@ from google_auth_oauthlib.flow import Flow  # pylint: disable=import-error
 
 from django_gauth import defaults
 from django_gauth.utilities import (
+    SESSION_LOGIN_AT_KEY,
     RedirectionScheme,
     check_gauth_authentication,
     credentials_to_dict,
@@ -282,6 +284,9 @@ def callback(request: HttpRequest):  # type: ignore
     request.session[settings.CREDENTIALS_SESSION_KEY_NAME] = credentials_to_dict(
         credentials
     )
+    # Stamp the login time — the anchor for the absolute session-age cap
+    # (GOOGLE_SESSION_MAX_AGE). This is set once here and never moved on refresh.
+    request.session[SESSION_LOGIN_AT_KEY] = time.time()
     # oauth_state is a single-use CSRF nonce — remove it now that auth is
     # complete so it doesn't linger in the authenticated session.
     request.session.pop(settings.STATE_KEY_NAME, None)

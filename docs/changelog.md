@@ -38,7 +38,13 @@ All notable changes to this project are documented here.
       access token and cached `id_info` when they've expired but a `refresh_token` exists.
     - **`get_credentials(request)` accessor** and **`revoke_google_token(token)` helper**
       are exported from `django_gauth.utilities`.
-    - New settings — `GOOGLE_TOKEN_REVOKE_ON_LOGOUT` (default `True`) and
+    - **Configurable session policy** — `GOOGLE_SESSION_AUTO_REFRESH` (default `True`),
+      `GOOGLE_SESSION_MAX_AGE` (absolute cap, default `None`), and
+      `GOOGLE_SESSION_IDLE_TIMEOUT` (idle cap, default `None`) let you choose anything
+      from an indefinite rolling session to forced periodic re-login. Defaults preserve
+      the previous always-refresh behaviour. See
+      [Choosing a session policy](concepts/session-lifecycle.md#choosing-a-session-policy).
+    - Logout settings — `GOOGLE_TOKEN_REVOKE_ON_LOGOUT` (default `True`) and
       `GOOGLE_AUTH_LOGOUT_REDIRECT_URL` (default `None`).
 
 ### Security
