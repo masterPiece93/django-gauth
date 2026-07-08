@@ -16,6 +16,8 @@ All notable changes to this project are documented here.
 
 ## 0.3.0
 
+:material-calendar: 2026-07-09
+
 ### Added
 
 - **Django User Integration (issue #85)** — an opt-in bridge to Django's own auth system,
@@ -72,6 +74,23 @@ All notable changes to this project are documented here.
   (e.g. a bare relative path like `"/dashboard/"`) produces an `Info`-level system check
   entry. Empty string and `None` are silently treated as "not configured". Use a
   fully-qualified URL (`https://myapp.example.com/dashboard/`) to keep system checks clean.
+- **Session-policy-aware landing page** — the built-in `/gauth/` index resolves auth state
+  through `get_credentials()` (so it agrees with `@gauth_required` and `/gauth/session`),
+  adds a **Logout button**, an effective-deadline countdown (earliest of token / max-age /
+  idle), and a targeted "session expired" message naming the governing policy.
+
+### Fixed
+
+- **Scope-reduction crash on re-login** — `callback()` no longer raises
+  `Warning: Scope has changed …` when Google grants fewer scopes than requested (common
+  after a logout that revoked the token); it tolerates the reduced set and logs a warning.
+- **Reliable session recovery** — `callback()` resets the idle clock on re-login, so a
+  stale `gauth_last_active` from a previously idle/expired session can no longer instantly
+  re-expire the fresh one under `GOOGLE_SESSION_IDLE_TIMEOUT`.
+- **`session_status()` matches the guards** — with Django User integration enabled, its
+  `authenticated` flag comes from `request.user.is_authenticated`, agreeing with
+  `@gauth_required` / `@login_required`.
+- **Countdown precision** — the landing-page timer no longer shows sub-second digits.
 
 ---
 
