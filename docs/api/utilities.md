@@ -16,6 +16,10 @@ from django_gauth.utilities import (
     has_epoch_time_passed,
     check_gauth_authentication,
     is_valid_google_url,
+    get_credentials,
+    get_session_expiry,
+    revoke_google_token,
+    get_or_create_user_from_id_info,
 )
 ```
 
@@ -147,3 +151,187 @@ is_valid_google_url("https://docs.google.com/document/d/abc")  # True
 is_valid_google_url("http://docs.google.com/document/d/abc")   # False (http)
 is_valid_google_url("https://drive.google.com/file/d/abc")     # False (wrong domain)
 ```
+
+---
+
+## `get_credentials(request)`
+
+The **session-lifecycle accessor** — returns valid Google `Credentials` for the request,
+transparently refreshing them when the session has expired but a `refresh_token` is
+available. This is the building block behind the [`session_status()`](views.md#session_statusrequest)
+probe.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `request` | `django.http.HttpRequest` | The request whose `session` holds the credentials |
+
+**Returns:** `Optional[Credentials]` — valid credentials, or `None` when the user is not
+authenticated, the session policy has expired the session, or no refresh is possible.
+
+**Logic flow:**
+
+```mermaid
+flowchart TD
+    A[get_credentials] --> Z{credentials in session?}
+    Z -->|No| E[return None]
+    Z -->|Yes| P{within session policy?<br/><small>max-age / idle</small>}
+    P -->|No| E
+    P -->|Yes| B{check_gauth_authentication<br/>valid?}
+    B -->|Yes| T[touch last-active] --> C[return credentials]
+    B -->|No| AR{auto-refresh enabled?}
+    AR -->|No| E
+    AR -->|Yes| F{refresh_token present?}
+    F -->|No| E
+    F -->|Yes| G[Rebuild Credentials + refresh]
+    G --> H{Refresh + re-verify ok?}
+    H -->|No| E
+    H -->|Yes| I[Write creds + id_info back to session]
+    I --> T
+
+    style C fill:#4CAF50,color:white
+    style E fill:#f44336,color:white
+```
+
+!!! success "Refreshes the ID token too"
+    A plain access-token refresh would leave the cached `id_info` — and therefore the
+    session lifetime — stuck at the original ~1 hour expiry. `get_credentials()`
+    re-verifies the **fresh `id_token`** returned by the refresh and writes the new
+    `id_info` back to the session, so the session moves forward with each refresh.
+
+!!! info "Enforces the session policy"
+    Before returning (or refreshing) credentials, `get_credentials()` applies the
+    configurable session policy — [`GOOGLE_SESSION_AUTO_REFRESH`](../configuration/settings.md#google_session_auto_refresh),
+    [`GOOGLE_SESSION_MAX_AGE`](../configuration/settings.md#google_session_max_age), and
+    [`GOOGLE_SESSION_IDLE_TIMEOUT`](../configuration/settings.md#google_session_idle_timeout).
+    A session that has exceeded its absolute-age or idle cap returns `None` even when
+    the underlying token is still technically valid. See
+    [Session Lifecycle → Choosing a session policy](../concepts/session-lifecycle.md#choosing-a-session-policy).
+
+**Usage in your views:**
+
+```python
+from django_gauth.utilities import get_credentials
+
+def my_protected_api(request):
+    credentials = get_credentials(request)
+    if credentials is None:
+        return JsonResponse({"detail": "unauthenticated"}, status=401)
+    # credentials.token is guaranteed fresh — call a Google API...
+```
+
+---
+
+## `get_session_expiry(session)`
+
+The **read-only** counterpart to [`get_credentials()`](#get_credentialsrequest). Computes
+the *effective* session-expiry deadline and which policy governs it, **without mutating the
+session** — so it is safe to call from status/display surfaces (the built-in landing page
+uses it to render the "Session Expiring In" countdown) without disturbing the idle clock.
+
+Three independent deadlines may apply; the **earliest wins**, because it is the first
+constraint the session will hit:
+
+| Policy | Deadline | Driven by |
+|--------|----------|-----------|
+| `"token"` | Google ID-token expiry (`id_info.exp`) | the Google session itself |
+| `"max_age"` | `login_at + GOOGLE_SESSION_MAX_AGE` | [`GOOGLE_SESSION_MAX_AGE`](../configuration/settings.md#google_session_max_age) |
+| `"idle"` | `last_active + GOOGLE_SESSION_IDLE_TIMEOUT` | [`GOOGLE_SESSION_IDLE_TIMEOUT`](../configuration/settings.md#google_session_idle_timeout) |
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `session` | `Mapping` | The Django session (or any mapping) to inspect |
+
+**Returns:** `dict` — `{"expires_at": float | None, "policy": str | None, "expired": bool}`.
+`expires_at` and `policy` are `None` when no deadline is known (e.g. an unauthenticated
+session).
+
+```python
+from django_gauth.utilities import get_session_expiry
+
+info = get_session_expiry(request.session)
+# {"expires_at": 1783737600.0, "policy": "idle", "expired": False}
+if info["expired"]:
+    ...  # session has lapsed under `info["policy"]`
+```
+
+!!! tip "Pure read — no side effects"
+    Unlike `get_credentials()`, this function never refreshes the token and never touches
+    the idle clock. Use it purely to *report* session state; use `get_credentials()` (or
+    the [`/gauth/session`](views.md#session_statusrequest) probe) when you need to
+    *enforce* it.
+
+---
+
+## `revoke_google_token(token)`
+
+Best-effort revocation of a Google OAuth2 token at Google's `revoke` endpoint. Used by
+the [`logout()`](views.md#logoutrequest) view when `GOOGLE_TOKEN_REVOKE_ON_LOGOUT` is
+enabled.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `token` | `str` | The token to revoke — prefer the `refresh_token` (revoking it also invalidates derived access tokens) |
+
+**Returns:** `bool` — `True` when Google responds `200`, `False` on a non-`200` response,
+an empty token, or any transport error (the exception is swallowed).
+
+```python
+from django_gauth.utilities import revoke_google_token
+
+revoke_google_token("1//0d-refresh-token")   # True on success
+revoke_google_token("")                        # False (nothing to revoke)
+```
+
+!!! info "Never raises"
+    This helper is intentionally forgiving so a logout is never blocked by an upstream
+    hiccup. Check the return value if you need to know whether revocation succeeded.
+
+---
+
+## `get_or_create_user_from_id_info(id_info)`
+
+Model-free get-or-create that maps a **verified** Google `id_info` to a row in your
+existing `AUTH_USER_MODEL`. This is the building block behind
+[`GoogleAuthBackend`](backends.md) and the [Django User Integration](../concepts/django-user-integration.md)
+feature — it adds **no models and no migrations** of its own.
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `id_info` | `dict` | The decoded, verified ID-token claims (from `callback()`) |
+
+**Returns:** `Optional[User]` — the matched or newly-created user, or `None` when the
+identity is refused.
+
+The resolution flow honours the [`GOOGLE_USER_*` settings](../configuration/settings.md#django-user-integration-settings):
+
+1. **Verified-email guard** — if `GOOGLE_USER_REQUIRE_VERIFIED_EMAIL` is `True` (default)
+   and the `email_verified` claim is falsy → `None`.
+2. **Email presence** — no `email` claim → `None`.
+3. **Case-insensitive lookup** — find a user by `{GOOGLE_USER_LOOKUP_FIELD}__iexact`.
+4. **Create if absent** — when no match and `GOOGLE_USER_AUTO_CREATE` is `True`, build a
+   new user (unusable password, collision-safe username); otherwise → `None`.
+5. **Mapper + save** — apply `GOOGLE_USER_MAPPER` (or the built-in name mapper) and
+   `save()`.
+
+```python
+from django_gauth.utilities import get_or_create_user_from_id_info
+
+user = get_or_create_user_from_id_info(request.session["id_info"])
+if user is not None:
+    login(request, user)
+```
+
+!!! tip "You rarely call this directly"
+    With `GOOGLE_USER_INTEGRATION = True` the [`callback()`](views.md#callbackrequest)
+    view calls it for you through `authenticate()`. Reach for it directly only when
+    building a custom auth flow.
+
+

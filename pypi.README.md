@@ -25,13 +25,53 @@ configuration, just the Google flow, clearly documented.
 | --- | :---: | :---: | :---: |
 | Setup for *just Google* | ⚡ Minimal (3 settings + 1 URL include) | 🧩 Broad, multi-step config | 🛠️ Manual OAuth wiring |
 | Built-in login page | ✅ Ships a landing page | ➖ Bring your own templates | ❌ Build it yourself |
+| Nested & dynamic auth (return-to-origin) | ✅ Built-in schemes | ➖ DIY | ❌ DIY |
+| Session lifecycle (auto-refresh + revoking logout) | ✅ Built-in, configurable policy | ➖ DIY | ❌ DIY |
 | Scope | 🎯 Google OAuth2 only | 🌐 Many providers | 🎯 Whatever you build |
+| Needs a `User` model + migrations | ✅ No — session-only | ➖ Yes — DB-backed | 🛠️ Up to you |
 | Learning curve | 📉 Low | 📈 Higher (large surface) | ⚠️ Easy to get OAuth subtly wrong |
-| Typed & tested | ✅ Type hints + ~99% coverage | ✅ Mature | ➖ Up to you |
+| Typed & tested | ✅ Type hints + 100% coverage | ✅ Mature | ➖ Up to you |
 
-**Reach for `django-allauth`** when you need many providers, account linking, and email
-workflows. **Reach for `django-gauth`** when you want Google sign-in working *today* with
-minimal ceremony.
+**Reach for `django-allauth` or `python-social-auth`** when you need real user *accounts* — a
+`User` row per person, many providers, account linking, or email workflows. **Reach for
+`django-gauth`** when you just need to answer *"is this a signed-in Google user?"* for an **SPA or
+API backend** — session-only, **no `User` model, no migrations** — with a JSON `/gauth/session`
+probe and a configurable session policy.
+
+> ℹ️ Transparent refresh and SPA support aren't unique (social-auth has a refresh helper; allauth
+> has a Headless API). `django-gauth`'s contribution is delivering them in that **stateless,
+> `User`-model-free** setting — where you'd otherwise wire it by hand.
+
+## ✨ Standout feature — Nested & Dynamic Auth
+
+Modern UIs place the *"Sign in with Google"* button **inline** — inside modals, deep within a
+workflow, or when a session expires mid-task. `django-gauth` brings users **back to the exact
+page (and state) they authenticated from**, out of the box — no more dumping them on a generic
+dashboard.
+
+- 🎯 **Return-to-origin redirection** — send users straight back to where they started.
+- 🧩 **SPA-ready** — first-class support for React/Vue via query-parameter *or* header schemes
+  (`PRESERVE_ORIGIN_QP` / `PRESERVE_ORIGIN_HP`), with `redirect` or `json` responses.
+- 🔒 **Safe by default** — origins are same-origin validated to block open-redirect attacks.
+
+> 📌 **Availability:** This feature is available in `django-gauth >= 0.3.0`.
+
+👉 **[Read about Redirection Schemes →](https://masterpiece93.github.io/django-gauth/concepts/redirection-schemes/)**
+
+## ✨ Standout feature — Django User Integration *(opt-in)*
+
+Want `request.user`, `@login_required`, and **admin** login backed by Google — *without* an
+extra `User` model, a token table, or migrations? Flip one switch and `django-gauth` maps
+Google identities onto your project's **existing** `AUTH_USER_MODEL`:
+
+- 👤 **Real `request.user`** — `@login_required`, `LoginRequiredMixin`, and the Django admin just work.
+- 🧩 **Zero `django-gauth` migrations** — get-or-create on your existing `auth_user`; no models of our own.
+- 🛡️ **Safe by default** — verified-email gated, unusable passwords, and a `manage.py check` for misconfig.
+- 🔌 **Dual-mode guards** — `gauth_required` / `GauthRequiredMixin` work with *or* without integration.
+
+> 📌 **Availability:** This feature is available in `django-gauth >= 0.3.0`.
+
+👉 **[Read about Django User Integration →](https://masterpiece93.github.io/django-gauth/concepts/django-user-integration/)**
 
 ## Installation
 
@@ -41,6 +81,10 @@ minimal ceremony.
 | ------ | ------- |
 | **GitHub** | ```pip install -e git+https://github.com/masterPiece93/django-gauth.git#egg=django_gauth```|
 | **PyPi**| ```pip install django-gauth``` |
+
+> 📌 **Compatibility note:** If you must stay on `django-gauth < 0.2.1`, pin
+> `google-auth-oauthlib<1.3.0,>=1.0.0` in your project requirements to avoid
+> PKCE-related OAuth failures. Higher Versions `0.2.1+` pin this for you, so no need to worry with them!
 
 ## Quickstart
 

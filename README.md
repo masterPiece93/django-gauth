@@ -8,6 +8,68 @@
 
 * [Official Documentation](https://masterpiece93.github.io/django-gauth/)
 
+## ✨ Feature Spotlight — Nested & Dynamic Auth
+
+Modern UIs place the *"Sign in with Google"* button **inline** — inside modals, deep within a
+workflow, or when a session expires mid-task. `django-gauth` brings users **back to the exact
+page (and state) they authenticated from**, out of the box — instead of dumping them on a
+generic dashboard.
+
+- 🎯 **Return-to-origin redirection** — nested & dynamic Google authentication from anywhere in your app.
+- 🧩 **SPA-ready (React/Vue)** — query-parameter *or* header schemes (`PRESERVE_ORIGIN_QP` / `PRESERVE_ORIGIN_HP`) with `redirect` or `json` responses.
+- 🔒 **Safe by default** — origins are same-origin validated to block open-redirect attacks.
+
+> 📌 **Availability:** This feature is available in `django-gauth >= 0.3.0`.
+
+> 👉 **Learn more:** [Redirection Schemes](https://masterpiece93.github.io/django-gauth/concepts/redirection-schemes/)
+
+## How is it different from allauth / social-auth?
+
+[`django-allauth`](https://docs.allauth.org/) and
+[`python-social-auth`](https://python-social-auth.readthedocs.io/) are full **authentication
+frameworks** — they bind to Django's `User` model and persist accounts and tokens in the
+**database** (their own models + migrations). That's what powers real user accounts, many
+providers, email/password, and account linking.
+
+`django-gauth` fills a deliberately **narrower niche**: it keeps Google identity in the
+**session only** — **no `User` model, no migrations, no ORM token store** — and exposes it as a
+JSON [`/gauth/session`](https://masterpiece93.github.io/django-gauth/api/views/#session_statusrequest)
+probe with a configurable
+[session policy](https://masterpiece93.github.io/django-gauth/concepts/session-lifecycle/#choosing-a-session-policy).
+
+| | `django-gauth` | allauth / social-auth |
+| --- | :---: | :---: |
+| Requires a Django `User` | ❌ session-only | ✅ |
+| DB models + migrations | ❌ none | ✅ |
+| Providers | Google only | Many |
+| Account management (signup, email, linking) | ❌ | ✅ |
+| Footprint | one small app | full framework |
+
+- **Reach for allauth / social-auth** when you want real user *accounts* — a `User` row per
+  person, multiple providers, email/password, or account linking.
+- **Reach for `django-gauth`** when you just need to answer *"is this request a signed-in Google
+  user?"* for an **SPA or API backend** — without adopting an auth framework, a `User` table, or
+  migrations.
+
+> ℹ️ Transparent refresh and SPA support aren't unique (social-auth has a refresh helper; allauth
+> has a Headless API). `django-gauth`'s contribution is delivering them in that **stateless,
+> `User`-model-free** setting.
+
+## ✨ Feature Spotlight — Django User Integration <sup>*(opt-in)*</sup>
+
+Want `request.user`, `@login_required`, and **admin** login backed by Google — *without* an
+extra `User` model, a token table, or migrations? Flip one switch and `django-gauth` maps
+Google identities onto your project's **existing** `AUTH_USER_MODEL`:
+
+- 👤 **Real `request.user`** — `@login_required`, `LoginRequiredMixin`, and the Django admin just work.
+- 🧩 **Zero `django-gauth` migrations** — get-or-create on your existing `auth_user`; no models of our own.
+- 🛡️ **Safe by default** — verified-email gated, unusable passwords, and a `manage.py check` that catches misconfig.
+- 🔌 **Dual-mode guards** — `gauth_required` / `GauthRequiredMixin` work with *or* without integration.
+
+> 👉 **Availability:** `django-gauth >= 0.3.0`.
+
+> 👉 **Learn more:** [Django User Integration](https://masterpiece93.github.io/django-gauth/concepts/django-user-integration/)
+
 ## Developer Zone
 
 > [Developer README](./dev.README.md)
@@ -38,6 +100,10 @@ from test PyPi
 ```sh
 pip install -i https://test.pypi.org/simple/ django-gauth
 ```
+
+> 📌 **Compatibility note:** If you must stay on `django-gauth < 0.2.1`, pin
+> `google-auth-oauthlib<1.3.0,>=1.0.0` in your project requirements to avoid
+> PKCE-related OAuth failures. Versions `0.2.1+` pin this for you.
 
 ## Quickstart
 

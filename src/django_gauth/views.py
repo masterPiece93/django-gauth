@@ -3,11 +3,21 @@ Auth Api's
 ~@ankit.kumar05
 """
 
+import logging
+import os
+import time
 import urllib.parse
 from copy import deepcopy
 from typing import Optional
 
+logger = logging.getLogger(__name__)
+
 from django.conf import settings  # pylint: disable=import-error
+from django.contrib.auth import (
+    authenticate as django_authenticate,  # pylint: disable=import-error
+)
+from django.contrib.auth import login as django_login
+from django.contrib.auth import logout as django_logout
 from django.http import (  # pylint: disable=import-error
     HttpRequest,
     HttpResponseBadRequest,
@@ -19,14 +29,67 @@ from google.auth.transport import requests  # pylint: disable=import-error
 from google.oauth2 import id_token  # pylint: disable=import-error
 from google_auth_oauthlib.flow import Flow  # pylint: disable=import-error
 
-from django_gauth.utilities import check_gauth_authentication, credentials_to_dict
+from django_gauth import defaults
+from django_gauth.utilities import (
+    SESSION_LOGIN_AT_KEY,
+    RedirectionScheme,
+    _touch_last_active,
+    credentials_to_dict,
+    get_credentials,
+    get_session_expiry,
+    revoke_google_token,
+)
+
+# Human-readable labels for the governing session-expiry policy, surfaced on the
+# landing page so a visitor understands *why* a countdown ends / a session drops.
+_SESSION_POLICY_LABELS = {
+    "token": "Google sign-in",
+    "max_age": "maximum session age",
+    "idle": "inactivity timeout",
+}
 
 
-def get_origin_url(request: HttpRequest) -> tuple[Optional[str], bool]:  # type: ignore
-    """check origin url"""
+def _user_integration_enabled() -> bool:
+    """Return ``True`` when Django User integration (v0.3.0) is switched on.
 
-    origin_url = request.GET.get("origin_url")
-    # origin_url = request.headers.get('X-ORIGIN-URL')
+    Reads the ``GOOGLE_USER_INTEGRATION`` master switch, falling back to the
+    packaged default (``False``) so the seam is inert unless a project opts in.
+    """
+    return bool(
+        getattr(
+            settings,
+            "GOOGLE_USER_INTEGRATION",
+            defaults.GOOGLE_USER_INTEGRATION,
+        )
+    )
+
+
+def get_origin_url(
+    request: HttpRequest,
+    retrieve_from: str = "query",
+    retrieve_key: str = "origin_url",
+) -> tuple[Optional[str], bool]:  # type: ignore
+    """Retrieves and validates the origin URL.
+
+    Args:
+        request: The HTTP request object.
+        retrieve_from: The source to retrieve the origin URL from.
+            Must be either ``"query"`` or ``"header"``.
+        retrieve_key: The key to look up in the chosen source.
+
+    Returns:
+        A tuple of (origin_url | None, is_valid_same_origin).
+    """
+    if retrieve_from == "query":
+        origin_url = request.GET.get(retrieve_key)
+    elif retrieve_from == "header":
+        origin_url = request.headers.get(retrieve_key)
+    else:
+        raise ValueError(
+            "ArgumentError | fn:get_origin_url | "
+            "retrieve_from must be either 'query' or 'header'"
+        )
+
     current_url = request.build_absolute_uri()
 
     if hasattr(settings, "DEBUG") and settings.DEBUG:
@@ -68,7 +131,14 @@ def get_origin_url(request: HttpRequest) -> tuple[Optional[str], bool]:  # type:
 
 # API
 def index(request: HttpRequest):  # type: ignore
-    is_authenticated, _ = check_gauth_authentication(request.session)
+    # Authentication is resolved through get_credentials so the landing page
+    # honours the full session-lifecycle policy (GOOGLE_SESSION_MAX_AGE and
+    # GOOGLE_SESSION_IDLE_TIMEOUT) and transparent refresh — matching what
+    # @gauth_required and /session enforce. The previous check_gauth_authentication
+    # probe only looked at the raw Google token and so disagreed with the guards.
+    credentials = get_credentials(request)
+    is_authenticated = credentials is not None
+
     id_info = request.session.get("id_info", {})
 
     id_info.pop("iss", None)
@@ -76,11 +146,28 @@ def index(request: HttpRequest):  # type: ignore
     id_info.pop("aud", None)
     id_info.pop("sub", None)
 
+    # Effective session expiry (earliest of token / max-age / idle deadlines) so
+    # the countdown reflects the real policy, not just the ~1h Google token exp.
+    # Computed after get_credentials so any idle-clock touch is already applied.
+    expiry = get_session_expiry(request.session)
+
+    # Distinguish "never signed in" from "signed in but the session policy
+    # expired" so the template can surface a targeted re-authentication message.
+    session_expired = bool(id_info) and not is_authenticated
+
     context: dict = {
         "title": "",
         "login_href": reverse("django_gauth:login"),
+        "logout_href": reverse("django_gauth:logout"),
         "user_info": id_info,
         "is_authenticated": is_authenticated,
+        "session_expired": session_expired,
+        "session_expiry": {
+            "expires_at": expiry["expires_at"],
+            "policy": expiry["policy"],
+            "policy_label": _SESSION_POLICY_LABELS.get(expiry["policy"], ""),
+            "expired": expiry["expired"],
+        },
     }
 
     if hasattr(settings, "DJANGO_GAUTH_UI_CONFIG"):
@@ -99,14 +186,62 @@ def index(request: HttpRequest):  # type: ignore
 
 
 def login(request: HttpRequest):  # type: ignore
-    """Login Api
-    - Initiates the oauth2 Flow
-    """
-    # Check for the authenticity of origin url
-    origin_url, is_valid_origin = get_origin_url(
-        request
-    )  # Fetch from Header:X-ORIGIN-URL in future
+    """Login Api — Initiates the OAuth2 Flow.
 
+    The ``scheme`` query parameter controls how the final redirect URL is
+    resolved:
+
+    - ``PRESERVE_ORIGIN_QP`` — reads ``origin_url`` from query params.
+    - ``PRESERVE_ORIGIN_HP`` — reads ``X-ORIGIN-URL`` from request header.
+    - ``LANDING_PAGE`` / ``DEFAULT`` — uses ``GOOGLE_AUTH_FINAL_REDIRECT_URL``
+      or the package index.
+
+    The ``response`` query parameter controls how the authorization URL is
+    delivered to the caller:
+
+    - ``redirect`` (default) — returns a 302 redirect to Google.
+    - ``json`` — returns a ``JsonResponse`` with ``{"redirect_to": ...}``.
+    """
+    # Determine the redirection scheme from the ?scheme= query parameter.
+    scheme_raw = request.GET.get("scheme", RedirectionScheme.DEFAULT.value)
+    scheme_raw = scheme_raw.upper()
+
+    # Determine the response type from the ?response= query parameter.
+    response_type = request.GET.get("response", "redirect").lower()
+    if response_type not in ("redirect", "json"):
+        return HttpResponseBadRequest(
+            f"Invalid response type '{response_type}'. "
+            f"Valid options: ['redirect', 'json']"
+        )
+
+    # Resolve origin URL based on the selected scheme.
+    origin_url: Optional[str] = None
+    is_valid_origin: bool = False
+
+    if scheme_raw == RedirectionScheme.PRESERVE_ORIGIN_HP.value:
+        origin_url, is_valid_origin = get_origin_url(
+            request, retrieve_from="header", retrieve_key="X-ORIGIN-URL"
+        )
+    elif scheme_raw == RedirectionScheme.PRESERVE_ORIGIN_QP.value:
+        origin_url, is_valid_origin = get_origin_url(
+            request, retrieve_from="query", retrieve_key="origin_url"
+        )
+    elif scheme_raw in (
+        RedirectionScheme.LANDING_PAGE.value,
+        RedirectionScheme.DEFAULT.name,
+    ):
+        origin_url = (
+            settings.GOOGLE_AUTH_FINAL_REDIRECT_URL
+            or request.build_absolute_uri(reverse("django_gauth:index"))
+        )
+        is_valid_origin = True
+    else:
+        return HttpResponseBadRequest(
+            f"Invalid redirection scheme '{scheme_raw}'. "
+            f"Valid options: {[m.name for m in RedirectionScheme]}"
+        )
+
+    # Auth Flow Setup
     flow = Flow.from_client_config(
         client_config={
             "web": {
@@ -115,20 +250,22 @@ def login(request: HttpRequest):  # type: ignore
                 "auth_uri": "https://accounts.google.com/o/oauth2/v2/auth",
                 "token_uri": "https://oauth2.googleapis.com/token",
             }
-        }
-        # if you need additional scopes, add them here
-        ,
+        },
         scopes=settings.SCOPE,
     )
 
-    # flow.redirect_uri = get_redirect_uri(request) # use this when
     flow.redirect_uri = request.build_absolute_uri(reverse("django_gauth:callback"))
 
     authorization_url, state = flow.authorization_url(
-        access_type="offline", prompt="select_account", include_granted_scopes="true"
+        access_type="offline",
+        prompt=settings.GOOGLE_LOGIN_PROMPT,
+        include_granted_scopes="true",
     )
 
+    # state initialization
     request.session[settings.STATE_KEY_NAME] = state
+
+    # final redirect initialization
     if origin_url and is_valid_origin:
         request.session[settings.FINAL_REDIRECT_KEY_NAME] = origin_url
     else:
@@ -136,11 +273,14 @@ def login(request: HttpRequest):  # type: ignore
             settings.FINAL_REDIRECT_KEY_NAME not in request.session
             or not request.session[settings.FINAL_REDIRECT_KEY_NAME]
         ):
-            # directs where to land after login is successful.
             request.session[settings.FINAL_REDIRECT_KEY_NAME] = (
                 settings.GOOGLE_AUTH_FINAL_REDIRECT_URL
                 or request.build_absolute_uri(reverse("django_gauth:index"))
-            )  # directs where to land after login is successful.
+            )
+
+    # Conditional response based on ?response= parameter
+    if response_type == "json":
+        return JsonResponse({"redirect_to": authorization_url})
     return redirect(authorization_url)
 
 
@@ -185,10 +325,38 @@ def callback(request: HttpRequest):  # type: ignore
     )
 
     flow.redirect_uri = redirect_uri
-    # fetch token
-    flow.fetch_token(authorization_response=authorization_response)
+    # fetch token — Google may grant fewer scopes than originally requested
+    # (e.g. after token revocation, when a sensitive scope requires re-consent,
+    # or when the app is unverified for a particular scope). oauthlib raises a
+    # Warning exception on scope reduction; we temporarily relax that validation
+    # since partial scope grants are expected in Google OAuth.
+    _prev_relax = os.environ.get("OAUTHLIB_RELAX_TOKEN_SCOPE")
+    os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
+    try:
+        flow.fetch_token(authorization_response=authorization_response)
+    finally:
+        if _prev_relax is None:
+            os.environ.pop("OAUTHLIB_RELAX_TOKEN_SCOPE", None)
+        else:
+            os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = _prev_relax
+
     # get credentials
     credentials = flow.credentials
+
+    # Log a warning when Google grants fewer scopes than requested — the app
+    # should still function (with degraded capabilities) but operators benefit
+    # from visibility into the mismatch.
+    granted = set(credentials.scopes or [])
+    requested = set(settings.SCOPE)
+    if granted and granted != requested:
+        dropped = requested - granted
+        if dropped:
+            logger.warning(
+                "Google granted fewer scopes than requested. "
+                "Dropped: %s. Granted: %s.",
+                dropped,
+                granted,
+            )
     # verify token, while also retrieving information about the user
     id_info = id_token.verify_oauth2_token(
         id_token=credentials.id_token,
@@ -196,15 +364,142 @@ def callback(request: HttpRequest):  # type: ignore
         audience=settings.GOOGLE_CLIENT_ID,
         clock_skew_in_seconds=5,
     )
+    # Capture the post-login destination before any session-key rotation.
+    final_redirect = request.session[settings.FINAL_REDIRECT_KEY_NAME]
+
+    # Optional Django User integration (v0.3.0): resolve the verified id_info to
+    # a real auth_user and open a Django auth session, so request.user,
+    # @login_required and the admin recognize the visitor. login() may rotate
+    # the session key, so the Google session state is (re)written afterwards.
+    if _user_integration_enabled():
+        user = django_authenticate(request, id_info=id_info)
+        if user is not None:
+            django_login(request, user)
+
     # session setting
     request.session["id_info"] = id_info
     request.session[settings.CREDENTIALS_SESSION_KEY_NAME] = credentials_to_dict(
         credentials
     )
+    # Stamp the login time — the anchor for the absolute session-age cap
+    # (GOOGLE_SESSION_MAX_AGE). This is set once here and never moved on refresh.
+    request.session[SESSION_LOGIN_AT_KEY] = time.time()
+    # Reset the idle clock too. A re-login must establish a *fresh* session-policy
+    # baseline; otherwise a stale ``gauth_last_active`` left over from the prior
+    # (expired) session would make GOOGLE_SESSION_IDLE_TIMEOUT fire immediately,
+    # so the user could never recover a session without a full logout. No-ops
+    # when no idle timeout is configured.
+    _touch_last_active(request.session)
+    # oauth_state is a single-use CSRF nonce — remove it now that auth is
+    # complete so it doesn't linger in the authenticated session.
+    request.session.pop(settings.STATE_KEY_NAME, None)
+
     # redirecting to the final redirect (i.e., logged in page)
-    redirect_response = redirect(request.session[settings.FINAL_REDIRECT_KEY_NAME])
+    redirect_response = redirect(final_redirect)
 
     return redirect_response
+
+
+def logout(request: HttpRequest):  # type: ignore
+    """Logout Api — clears the session and (optionally) revokes the Google token.
+
+    Mirrors ``login()``'s ``?response=`` convention so it plugs cleanly into an
+    SPA backend:
+
+    - ``redirect`` *(default)* — `302` to ``GOOGLE_AUTH_LOGOUT_REDIRECT_URL``
+      (or the package index).
+    - ``json`` — `200` with ``{"status": "logged_out"}``.
+
+    Upstream token revocation is best-effort and controlled by the
+    ``GOOGLE_TOKEN_REVOKE_ON_LOGOUT`` setting (default ``True``). A revocation
+    failure never blocks logout — the local session is always cleared.
+    """
+    response_type = request.GET.get("response", "redirect").lower()
+    if response_type not in ("redirect", "json"):
+        return HttpResponseBadRequest(
+            f"Invalid response type '{response_type}'. "
+            f"Valid options: ['redirect', 'json']"
+        )
+
+    # Best-effort upstream token revocation before the session is cleared.
+    revoke_enabled = getattr(
+        settings,
+        "GOOGLE_TOKEN_REVOKE_ON_LOGOUT",
+        defaults.GOOGLE_TOKEN_REVOKE_ON_LOGOUT,
+    )
+    credentials_key = settings.CREDENTIALS_SESSION_KEY_NAME or "credentials"
+    if revoke_enabled and credentials_key in request.session:
+        stored = request.session[credentials_key]
+        # Prefer the refresh_token — revoking it also invalidates access tokens.
+        token = stored.get("refresh_token") or stored.get("token")
+        if token:
+            revoke_google_token(token)
+
+    # Clear the entire session (rotates the session key). When Django User
+    # integration is active, route through auth.logout() so the
+    # user_logged_out signal fires and request.user resets to AnonymousUser;
+    # it flushes the session for us.
+    if _user_integration_enabled():
+        django_logout(request)
+    else:
+        request.session.flush()
+
+    if response_type == "json":
+        return JsonResponse({"status": "logged_out"})
+
+    logout_redirect = getattr(settings, "GOOGLE_AUTH_LOGOUT_REDIRECT_URL", None)
+    return redirect(logout_redirect or reverse("django_gauth:index"))
+
+
+def session_status(request: HttpRequest):  # type: ignore
+    """Session probe for SPA frontends.
+
+    Returns the current authentication state as JSON, transparently refreshing
+    the Google access token (and cached ``id_info``) when it has expired but a
+    ``refresh_token`` is available. This is what lets sessions survive past the
+    ~1 hour ID-token lifetime.
+
+    Response shape:
+        ``{"authenticated": bool, "user": {...} | null, "user_id": int | null}``
+
+    The ``user`` payload is the sanitized ``id_info`` (opaque ``iss``/``azp``/
+    ``aud``/``sub`` claims are stripped), matching the landing page and debug
+    endpoint.
+
+    ``user_id`` is always present (v0.3.0). It carries the primary key of the
+    linked Django ``auth_user`` when :ref:`Django User integration
+    <GOOGLE_USER_INTEGRATION>` is enabled *and* ``request.user`` is
+    authenticated; otherwise it is ``null``. This lets a frontend correlate the
+    Google session with a server-side user without exposing the ``sub`` claim.
+    """
+    # ADR-7: user_id is always present; null unless integration is on AND the
+    # Django auth session resolved a real user.
+    user_id = None
+    if _user_integration_enabled():
+        request_user = getattr(request, "user", None)
+        if request_user is not None and request_user.is_authenticated:
+            user_id = request_user.pk
+
+    credentials = get_credentials(request)
+
+    # When Django User integration is enabled, authentication status is sourced
+    # from request.user.is_authenticated (matching @gauth_required and
+    # @login_required semantics) rather than from the Google credential state
+    # alone. This ensures the probe agrees with what protected views enforce.
+    if _user_integration_enabled():
+        is_authenticated = user_id is not None
+    else:
+        is_authenticated = credentials is not None
+
+    if not is_authenticated:
+        return JsonResponse({"authenticated": False, "user": None, "user_id": user_id})
+
+    user_info = deepcopy(request.session.get("id_info", {}))
+    for claim in ("iss", "azp", "aud", "sub"):
+        user_info.pop(claim, None)
+    return JsonResponse(
+        {"authenticated": True, "user": user_info or None, "user_id": user_id}
+    )
 
 
 def debug_information(request: HttpRequest):  # type: ignore
@@ -239,6 +534,7 @@ def debug_information(request: HttpRequest):  # type: ignore
         if "scopes" in value:
             session_data["debug"]["credentials_info"]["scopes"] = value["scopes"]
     # sanitizing `oauth_state`
+    # (already removed from session on successful auth, guarded here for safety)
     if "oauth_state" in session_data:
         session_data.pop("oauth_state")
     return JsonResponse({"session": session_data})

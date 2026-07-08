@@ -1,5 +1,6 @@
 import warnings
 from typing import Any
+from urllib.parse import urlparse
 
 from django.apps import AppConfig  # pylint: disable=E0401
 
@@ -15,8 +16,21 @@ from django_gauth._checks import (
     ErrorCodes,
     check_project_middlewares,
     check_project_settings,
+    check_user_integration_requirements,
     formulate_check_id,
 )
+
+
+def is_url(url_string: str) -> bool:
+    """Check if a string is a valid URL.
+    [utility function]"""
+    try:
+        result = urlparse(url_string)
+        # Returns True if both scheme (e.g., http) and netloc (e.g., github.com) exist
+        return all([result.scheme, result.netloc])
+    except ValueError:
+        return False
+
 
 warnings.simplefilter("default")
 
@@ -44,6 +58,7 @@ class DjangoGauthConfig(AppConfig):
     def ready(self) -> None:
         register(Tags.compatibility)(check_project_middlewares)
         register(Tags.django_gauth_compatibility)(check_project_settings)
+        register(Tags.django_gauth_compatibility)(check_user_integration_requirements)
 
 
 @register(Tags.django_gauth_compatibility)
@@ -76,7 +91,10 @@ def set_defaults(app_configs: object, **kwargs: Any) -> list:  # pylint: disable
         )
         warnings.warn(_msg)
     else:
-        if not settings.GOOGLE_AUTH_FINAL_REDIRECT_URL:
+        if settings.GOOGLE_AUTH_FINAL_REDIRECT_URL and (
+            not len(settings.GOOGLE_AUTH_FINAL_REDIRECT_URL) > 0
+            or not is_url(settings.GOOGLE_AUTH_FINAL_REDIRECT_URL)
+        ):
             _msg = (
                 "GOOGLE_AUTH_FINAL_REDIRECT_URL setting is set to"
                 + f"`{settings.GOOGLE_AUTH_FINAL_REDIRECT_URL}` which is logically incorrect."
@@ -122,14 +140,30 @@ def set_defaults(app_configs: object, **kwargs: Any) -> list:  # pylint: disable
         setattr(settings, "FINAL_REDIRECT_KEY_NAME", defaults.FINAL_REDIRECT_KEY_NAME)
         _msg = (
             "FINAL_REDIRECT_KEY_NAME settings is not defined."
-            + "Defaulting to `{defaults.FINAL_REDIRECT_KEY_NAME}`"
+            + f"Defaulting to `{defaults.FINAL_REDIRECT_KEY_NAME}`"
         )
         warnings.warn(_msg)
     else:
         if not settings.FINAL_REDIRECT_KEY_NAME:
             _msg = (
                 "FINAL_REDIRECT_KEY_NAME setting is set to"
-                + "`{settings.FINAL_REDIRECT_KEY_NAME}` which is logically incorrect."
+                + f"`{settings.FINAL_REDIRECT_KEY_NAME}` which is logically incorrect."
+            )
+            info = Info(_msg)
+            errors.append(info)
+
+    if not hasattr(settings, "GOOGLE_LOGIN_PROMPT"):
+        setattr(settings, "GOOGLE_LOGIN_PROMPT", defaults.GOOGLE_LOGIN_PROMPT)
+        _msg = (
+            "GOOGLE_LOGIN_PROMPT settings is not defined."
+            + f"Defaulting to `{defaults.GOOGLE_LOGIN_PROMPT}`"
+        )
+        warnings.warn(_msg)
+    else:
+        if not settings.GOOGLE_LOGIN_PROMPT:
+            _msg = (
+                "GOOGLE_LOGIN_PROMPT setting is set to"
+                + f"`{settings.GOOGLE_LOGIN_PROMPT}` which is logically incorrect."
             )
             info = Info(_msg)
             errors.append(info)

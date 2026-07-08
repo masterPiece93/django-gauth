@@ -147,6 +147,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Gauth App Variables
 GOOGLE_CLIENT_ID=env("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET=env("GOOGLE_CLIENT_SECRET")
+GOOGLE_LOGIN_PROMPT = "select_account consent"
 GOOGLE_AUTH_FINAL_REDIRECT_URL= None
 CREDENTIALS_SESSION_KEY_NAME= "credentials"
 STATE_KEY_NAME= "oauth_state"
@@ -156,5 +157,4 @@ SCOPE= [
     ,"openid"
     ,"https://www.googleapis.com/auth/drive"
 ]
-
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1' # :local-development

@@ -66,17 +66,27 @@ All settings are defined in your Django project's `settings.py`.
 
 ### `GOOGLE_AUTH_FINAL_REDIRECT_URL`
 
-:   Where to redirect after successful authentication.
+:   Where to redirect after successful authentication. Must be a fully-qualified URL
+    when set to a non-empty value.
 
     ```python
-    # Redirect to your app's dashboard
-    GOOGLE_AUTH_FINAL_REDIRECT_URL = "/dashboard/"
+    # Development
+    GOOGLE_AUTH_FINAL_REDIRECT_URL = "http://127.0.0.1:8000/dashboard/"
 
-    # Or use None to go back to /gauth/ landing page
+    # Production
+    GOOGLE_AUTH_FINAL_REDIRECT_URL = "https://myapp.example.com/dashboard/"
+
+    # Or omit / set to None to fall back to the /gauth/ landing page
     GOOGLE_AUTH_FINAL_REDIRECT_URL = None
     ```
 
     **Type:** `Optional[str]` · **Default:** `None` (redirects to `/gauth/`)
+
+    !!! warning "URL format validated at startup"
+        Django Gauth validates this setting using URL parsing (both `scheme` and `host`
+        must be present). A non-empty value without a scheme or host — such as a bare
+        relative path like `"/dashboard/"` — produces an `Info`-level system check
+        entry. `None` and empty string `""` are silently treated as "not configured".
 
 ### `CREDENTIALS_SESSION_KEY_NAME`
 
@@ -98,6 +108,154 @@ All settings are defined in your Django project's `settings.py`.
 
     **Type:** `str` · **Default:** `"oauth_state"`
 
+### `GOOGLE_LOGIN_PROMPT`
+
+:   Controls the Google consent screen behaviour passed as the `prompt` parameter
+    to Google's authorization endpoint.
+
+    ```python
+    # Default — always show account picker AND re-confirm consent
+    GOOGLE_LOGIN_PROMPT = "select_account consent"
+
+    # Show account picker only (re-consent on scope change only)
+    GOOGLE_LOGIN_PROMPT = "select_account"
+
+    # Force consent page every time (useful when testing scopes)
+    GOOGLE_LOGIN_PROMPT = "consent"
+
+    # No prompt — silently use existing session (SSO-style)
+    GOOGLE_LOGIN_PROMPT = "none"
+    ```
+
+    **Type:** `str` · **Default:** `"select_account consent"`
+
+    !!! info "Accepted values"
+        | Value | Behaviour |
+        |-------|-----------|
+        | `select_account` | Force account selection even if one session exists |
+        | `consent` | Force the consent screen every time |
+        | `select_account consent` | Both — recommended default |
+        | `none` | No UI shown; fails if interaction is required |
+
+    !!! tip "When to change this"
+        - Set to `"select_account"` if users have only one account and re-confirming
+          consent on every login is intrusive.
+        - Set to `"none"` for silent SSO flows where the user has previously consented.
+
+### `GOOGLE_TOKEN_REVOKE_ON_LOGOUT`
+
+:   Whether the [`logout()`](../api/views.md#logoutrequest) view best-effort revokes the
+    upstream Google token before flushing the local session. Revoking withdraws access on
+    Google's side too, not just locally.
+
+    ```python
+    # Default — revoke the Google token on logout
+    GOOGLE_TOKEN_REVOKE_ON_LOGOUT = True
+
+    # Only clear the local session; leave the Google grant intact
+    GOOGLE_TOKEN_REVOKE_ON_LOGOUT = False
+    ```
+
+    **Type:** `bool` · **Default:** `True`
+
+    !!! info "Best-effort by design"
+        The `refresh_token` is preferred for revocation (revoking it also invalidates
+        derived access tokens). A revocation failure **never** blocks logout — the local
+        session is always cleared.
+
+### `GOOGLE_AUTH_LOGOUT_REDIRECT_URL`
+
+:   Where the [`logout()`](../api/views.md#logoutrequest) view redirects to when called
+    with the default `?response=redirect`. `None` falls back to the `/gauth/` index page.
+
+    ```python
+    # Send users to your marketing site after logout
+    GOOGLE_AUTH_LOGOUT_REDIRECT_URL = "https://myapp.example.com/goodbye/"
+
+    # Or fall back to the /gauth/ landing page
+    GOOGLE_AUTH_LOGOUT_REDIRECT_URL = None
+    ```
+
+    **Type:** `Optional[str]` · **Default:** `None` (redirects to `/gauth/`)
+
+    !!! tip "SPA logout"
+        Frontends usually call `/gauth/logout/?response=json` and handle navigation
+        themselves — in that case this setting is not consulted. See
+        [Session Lifecycle](../concepts/session-lifecycle.md).
+
+### `GOOGLE_SESSION_AUTO_REFRESH`
+
+:   Master switch for **transparent token refresh**. When `True` (default),
+    [`get_credentials()`](../api/utilities.md#get_credentialsrequest) and the
+    `/gauth/session` probe silently refresh an expired access token (using the
+    stored `refresh_token`) so the session survives past Google's ~1 hour ID-token
+    lifetime. When `False`, an expired session simply **ends** and the user must
+    re-authenticate.
+
+    ```python
+    # Default — keep users signed in via silent refresh
+    GOOGLE_SESSION_AUTO_REFRESH = True
+
+    # Force re-login once the ID token expires (no silent refresh)
+    GOOGLE_SESSION_AUTO_REFRESH = False
+    ```
+
+    **Type:** `bool` · **Default:** `True`
+
+### `GOOGLE_SESSION_MAX_AGE`
+
+:   **Absolute session cap**, in seconds. When set, a session is never extended
+    past `login_time + GOOGLE_SESSION_MAX_AGE` — even when a valid `refresh_token`
+    is available. `None` disables the cap (sessions roll forward indefinitely via
+    refresh).
+
+    ```python
+    # Force a fresh login at least every 8 hours, regardless of activity
+    GOOGLE_SESSION_MAX_AGE = 8 * 60 * 60
+
+    # No absolute cap (default)
+    GOOGLE_SESSION_MAX_AGE = None
+    ```
+
+    **Type:** `Optional[int]` · **Default:** `None`
+
+    !!! tip "Compliance-friendly"
+        Many security policies (PCI-DSS, HIPAA, internal SOC 2 controls) require an
+        absolute re-authentication interval. This setting enforces exactly that,
+        independent of whether Google would still honour the refresh token.
+
+    !!! warning "The cap is **not** lifted by `GOOGLE_SESSION_AUTO_REFRESH`"
+        This is a **hard ceiling**, measured from the original login and **never**
+        moved by a refresh. With `AUTO_REFRESH=True` *and* `MAX_AGE` set, hitting
+        `/gauth/session` after the cap elapses returns `authenticated: false` — it
+        does **not** refresh. That is intended: an ever-refreshable cap would never
+        fire. For "extend while active, up to a limit", pair it with
+        `GOOGLE_SESSION_IDLE_TIMEOUT`. See
+        [Session Lifecycle → Precedence](../concepts/session-lifecycle.md#precedence-why-refresh-never-beats-the-caps).
+
+### `GOOGLE_SESSION_IDLE_TIMEOUT`
+
+:   **Idle timeout**, in seconds. When set, a session that has been inactive for
+    longer than this window ends and the user must re-authenticate. Activity is
+    measured by successful calls to `get_credentials()` (e.g. each `/gauth/session`
+    probe or protected API call). `None` disables the idle timeout.
+
+    ```python
+    # Sign users out after 30 minutes of inactivity
+    GOOGLE_SESSION_IDLE_TIMEOUT = 30 * 60
+
+    # No idle timeout (default)
+    GOOGLE_SESSION_IDLE_TIMEOUT = None
+    ```
+
+    **Type:** `Optional[int]` · **Default:** `None`
+
+    !!! info "Absolute cap + idle timeout compose"
+        `GOOGLE_SESSION_MAX_AGE` and `GOOGLE_SESSION_IDLE_TIMEOUT` are independent —
+        set either, both, or neither. A session must satisfy **all** configured
+        caps to be extended. See
+        [Session Lifecycle → Choosing a session policy](../concepts/session-lifecycle.md#choosing-a-session-policy).
+
 ### `DJANGO_GAUTH_UI_CONFIG`
 
 :   Customize the appearance of the built-in landing page.
@@ -116,6 +274,96 @@ All settings are defined in your Django project's `settings.py`.
     **Type:** `dict` · **Default:** Not set (uses built-in assets)
 
     See [UI Customization](ui-customization.md) for details.
+
+---
+
+## Django User Integration Settings
+
+!!! abstract "Opt-in — off by default"
+    These settings power the optional bridge to Django's own auth system
+    (`request.user`, `@login_required`, the admin). They do **nothing** unless
+    `GOOGLE_USER_INTEGRATION = True`. See
+    [Django User Integration](../concepts/django-user-integration.md) for the full
+    walkthrough, including the required `AUTHENTICATION_BACKENDS` entry.
+
+### `GOOGLE_USER_INTEGRATION`
+
+:   Master switch. When `True`, a successful callback also opens a Django auth session
+    (via `GoogleAuthBackend`), so `request.user` is the Google-authenticated user.
+
+    ```python
+    GOOGLE_USER_INTEGRATION = True
+    ```
+
+    **Type:** `bool` · **Default:** `False`
+
+    !!! warning "Also register the backend"
+        Enabling this flag is not enough on its own — add the backend to
+        `AUTHENTICATION_BACKENDS` (keep `ModelBackend` too):
+
+        ```python
+        AUTHENTICATION_BACKENDS = [
+            "django_gauth.backends.GoogleAuthBackend",
+            "django.contrib.auth.backends.ModelBackend",
+        ]
+        ```
+
+        `manage.py check` will warn (`django_gauth.W001`–`W003`) if the backend,
+        `django.contrib.auth`, or `AuthenticationMiddleware` is missing.
+
+### `GOOGLE_USER_AUTO_CREATE`
+
+:   Whether to create a new `User` when no existing account matches the Google identity.
+    When `False`, only pre-existing users can sign in (a missing match is refused).
+
+    ```python
+    GOOGLE_USER_AUTO_CREATE = True
+    ```
+
+    **Type:** `bool` · **Default:** `True`
+
+### `GOOGLE_USER_LOOKUP_FIELD`
+
+:   The `User` field used to find an existing account. The match is **case-insensitive**
+    (`{field}__iexact`). `email` reads the Google `email` claim; any other field name is
+    read from the corresponding `id_info` claim.
+
+    ```python
+    GOOGLE_USER_LOOKUP_FIELD = "email"
+    ```
+
+    **Type:** `str` · **Default:** `"email"`
+
+### `GOOGLE_USER_REQUIRE_VERIFIED_EMAIL`
+
+:   When `True`, sign-in is refused unless Google reports the email as verified
+    (`email_verified` claim). This is the primary guard against account hijacking via an
+    unverified address — keep it on unless you fully trust every issuer.
+
+    ```python
+    GOOGLE_USER_REQUIRE_VERIFIED_EMAIL = True
+    ```
+
+    **Type:** `bool` · **Default:** `True`
+
+### `GOOGLE_USER_MAPPER`
+
+:   Optional dotted path to a callable `(id_info, user, created) -> None` that runs on
+    every sign-in, letting you copy claims onto the `User` (roles, avatar, groups, …)
+    before it is saved. When unset, a built-in mapper fills `first_name` / `last_name`
+    from the `given_name` / `family_name` claims if they are empty.
+
+    ```python
+    GOOGLE_USER_MAPPER = "myapp.auth.map_google_user"
+    ```
+
+    ```python
+    # myapp/auth.py
+    def map_google_user(id_info, user, created):
+        user.is_staff = id_info.get("hd") == "mycompany.com"
+    ```
+
+    **Type:** `str | None` · **Default:** `None`
 
 ---
 
@@ -145,6 +393,17 @@ All settings are defined in your Django project's `settings.py`.
 | `GOOGLE_AUTH_FINAL_REDIRECT_URL` | ❌ | `str\|None` | `None` |
 | `CREDENTIALS_SESSION_KEY_NAME` | ❌ | `str` | `"credentials"` |
 | `STATE_KEY_NAME` | ❌ | `str` | `"oauth_state"` |
+| `GOOGLE_LOGIN_PROMPT` | ❌ | `str` | `"select_account consent"` |
+| `GOOGLE_TOKEN_REVOKE_ON_LOGOUT` | ❌ | `bool` | `True` |
+| `GOOGLE_AUTH_LOGOUT_REDIRECT_URL` | ❌ | `str\|None` | `None` |
+| `GOOGLE_SESSION_AUTO_REFRESH` | ❌ | `bool` | `True` |
+| `GOOGLE_SESSION_MAX_AGE` | ❌ | `int\|None` | `None` |
+| `GOOGLE_SESSION_IDLE_TIMEOUT` | ❌ | `int\|None` | `None` |
+| `GOOGLE_USER_INTEGRATION` | ❌ | `bool` | `False` |
+| `GOOGLE_USER_AUTO_CREATE` | ❌ | `bool` | `True` |
+| `GOOGLE_USER_LOOKUP_FIELD` | ❌ | `str` | `"email"` |
+| `GOOGLE_USER_REQUIRE_VERIFIED_EMAIL` | ❌ | `bool` | `True` |
+| `GOOGLE_USER_MAPPER` | ❌ | `str\|None` | `None` |
 | `DJANGO_GAUTH_UI_CONFIG` | ❌ | `dict` | Not set |
 
 ---
@@ -159,6 +418,9 @@ Django Gauth validates your settings when the server starts:
 | `django_gauth.E002` | Error | `SessionMiddleware` not in `MIDDLEWARE` |
 | `django_gauth.E003` | Error | `GOOGLE_CLIENT_ID` or `GOOGLE_CLIENT_SECRET` missing |
 | `django_gauth.E004` | Warning | `SCOPE` not defined |
+| `django_gauth.W001` | Warning | `GOOGLE_USER_INTEGRATION` on, but `django.contrib.auth` missing |
+| `django_gauth.W002` | Warning | `GOOGLE_USER_INTEGRATION` on, but `AuthenticationMiddleware` missing |
+| `django_gauth.W003` | Warning | `GOOGLE_USER_INTEGRATION` on, but `GoogleAuthBackend` missing |
 
 Run checks manually:
 

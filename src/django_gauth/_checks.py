@@ -5,6 +5,9 @@ from typing import Any, Callable
 
 from django.conf import settings  # pylint: disable=E0401
 from django.core.checks import Error  # pylint: disable=E0401
+from django.core.checks import Warning as SysCheckWarning  # pylint: disable=E0401
+
+from django_gauth import defaults
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +28,18 @@ class ErrorCodes(Enum):
         credentials ( GOOGLE_CLIENT_ID & GOOGLE_CLIENT_SECRET )",
     )
     E004 = ("INVALID_GAUTH_SCOPE", "Please set valid oauth2 SCOPE")
+    W001 = (
+        "MISSING_AUTH_APP_FOR_USER_INTEGRATION",
+        "django.contrib.auth is required when GOOGLE_USER_INTEGRATION is enabled",
+    )
+    W002 = (
+        "MISSING_AUTH_MIDDLEWARE_FOR_USER_INTEGRATION",
+        "AuthenticationMiddleware is required when GOOGLE_USER_INTEGRATION is enabled",
+    )
+    W003 = (
+        "MISSING_AUTH_BACKEND_FOR_USER_INTEGRATION",
+        "GoogleAuthBackend is required when GOOGLE_USER_INTEGRATION is enabled",
+    )
 
 
 formulate_check_id: Callable = lambda code: f"{__app_label__}.{code}"
@@ -82,3 +97,68 @@ def check_project_middlewares(
             )
         )
     return errors
+
+
+def check_user_integration_requirements(
+    app_configs: object, **kwargs: Any  # pylint: disable=W0613
+) -> list:
+    """Verify the project wiring when Django User integration is switched on.
+
+    ``GOOGLE_USER_INTEGRATION`` is opt-in and inert by default, so these are
+    Warnings (not Errors): the core Google/SPA flow keeps working, but
+    ``request.user`` will silently stay ``AnonymousUser`` unless all three
+    moving parts below are present. Surfacing them via ``manage.py check`` turns
+    a confusing silent no-op into an actionable message.
+    """
+    warnings_list: list = []
+
+    integration_enabled = getattr(
+        settings,
+        "GOOGLE_USER_INTEGRATION",
+        defaults.GOOGLE_USER_INTEGRATION,
+    )
+    if not integration_enabled:
+        return warnings_list
+
+    # 1. The auth app supplies the User model, ModelBackend and login/logout.
+    if "django.contrib.auth" not in getattr(settings, "INSTALLED_APPS", []):
+        warnings_list.append(
+            SysCheckWarning(
+                "GOOGLE_USER_INTEGRATION is enabled but 'django.contrib.auth' "
+                "is missing from INSTALLED_APPS.",
+                hint="Add 'django.contrib.auth' to INSTALLED_APPS.",
+                id=formulate_check_id(ErrorCodes.W001.name),
+            )
+        )
+
+    # 2. AuthenticationMiddleware is what attaches request.user per request.
+    auth_middleware_path = "django.contrib.auth.middleware.AuthenticationMiddleware"
+    if auth_middleware_path not in getattr(settings, "MIDDLEWARE", []):
+        warnings_list.append(
+            SysCheckWarning(
+                "GOOGLE_USER_INTEGRATION is enabled but "
+                f"'{auth_middleware_path}' is missing from MIDDLEWARE.",
+                hint=(
+                    f"Add '{auth_middleware_path}' to MIDDLEWARE, "
+                    "after SessionMiddleware."
+                ),
+                id=formulate_check_id(ErrorCodes.W002.name),
+            )
+        )
+
+    # 3. GoogleAuthBackend is what turns a verified id_info into a User.
+    backend_path = "django_gauth.backends.GoogleAuthBackend"
+    if backend_path not in getattr(settings, "AUTHENTICATION_BACKENDS", []):
+        warnings_list.append(
+            SysCheckWarning(
+                "GOOGLE_USER_INTEGRATION is enabled but "
+                f"'{backend_path}' is missing from AUTHENTICATION_BACKENDS.",
+                hint=(
+                    f"Add '{backend_path}' to AUTHENTICATION_BACKENDS "
+                    "(keep 'django.contrib.auth.backends.ModelBackend' too)."
+                ),
+                id=formulate_check_id(ErrorCodes.W003.name),
+            )
+        )
+
+    return warnings_list

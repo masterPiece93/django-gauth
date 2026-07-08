@@ -12,6 +12,8 @@ urlpatterns = [
     path("", views.index, name="index"),
     path("login/", views.login, name="login"),
     path("login-callback", views.callback, name="callback"),
+    path("logout/", views.logout, name="logout"),
+    path("session", views.session_status, name="session"),
 ]
 
 if hasattr(settings, "DEBUG") and settings.DEBUG:

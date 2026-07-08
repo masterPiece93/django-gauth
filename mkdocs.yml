@@ -118,6 +118,9 @@ nav:
   - Concepts:
       - How OAuth2 Works: concepts/oauth2-explained.md
       - Architecture: concepts/architecture.md
+      - Redirection Schemes: concepts/redirection-schemes.md
+      - Session Lifecycle: concepts/session-lifecycle.md
+      - Django User Integration: concepts/django-user-integration.md
   - Configuration:
       - Settings Reference: configuration/settings.md
       - URL Configuration: configuration/urls.md
@@ -128,6 +131,8 @@ nav:
   - API Reference:
       - Views: api/views.md
       - Utilities: api/utilities.md
+      - Backends: api/backends.md
+      - Decorators: api/decorators.md
       - System Checks: api/checks.md
   - Flows: flows.md
   - Changelog: changelog.md

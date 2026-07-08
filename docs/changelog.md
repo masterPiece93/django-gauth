@@ -12,6 +12,88 @@ All notable changes to this project are documented here.
 
 ---
 
+## Unreleased
+
+## 0.3.0
+
+:material-calendar: 2026-07-09
+
+### Added
+
+- **Django User Integration (issue #85)** — an opt-in bridge to Django's own auth system,
+  so `request.user`, `@login_required`, and the admin recognise Google-authenticated
+  visitors — **with no `django-gauth` models and zero migrations**. Off by default; enable
+  with `GOOGLE_USER_INTEGRATION = True` and register `GoogleAuthBackend`. Adds the
+  `get_or_create_user_from_id_info()` helper, `gauth_required` / `GauthRequiredMixin` view
+  guards, five `GOOGLE_USER_*` settings, and a `manage.py check`
+  (`django_gauth.W001`–`W003`). See
+  [Django User Integration](concepts/django-user-integration.md).
+- **Redirection Schemes (issue #77)** — nested & dynamic Google auth out of the box.
+  `login()` accepts a `?scheme=` query parameter (`PRESERVE_ORIGIN_QP`,
+  `PRESERVE_ORIGIN_HP`, `LANDING_PAGE`, `DEFAULT`) that sends users back to the exact
+  page they authenticated from. Origins are same-origin validated to prevent
+  open-redirect attacks. See
+  [Redirection Schemes](concepts/redirection-schemes.md).
+- **Configurable `login()` response type** — a `?response=` parameter selects `redirect`
+  (default `302`) or `json` (`{"redirect_to": ...}`) delivery of the authorization URL.
+  The JSON form lets an SPA drive the top-level navigation itself, and is required for the
+  `PRESERVE_ORIGIN_HP` scheme.
+- **Session Lifecycle Management (issue #86)** — keep sessions alive past Google's ~1 hour
+  ID-token lifetime, plus a clean logout. See
+  [Session Lifecycle](concepts/session-lifecycle.md).
+    - **`logout()` view** (`/gauth/logout/`) — flushes the session and best-effort
+      **revokes the upstream Google token**. Mirrors `login()`'s `?response=` convention
+      (`redirect` → `302`, `json` → `{"status": "logged_out"}`). Revocation failures never
+      block logout.
+    - **`session_status()` probe** (`/gauth/session`) — a JSON endpoint an SPA can poll:
+      `{"authenticated": bool, "user": {...} | null}`. It **transparently refreshes** the
+      access token and cached `id_info` when they've expired but a `refresh_token` exists.
+    - **`get_credentials(request)` accessor** and **`revoke_google_token(token)` helper**
+      are exported from `django_gauth.utilities`.
+    - **Configurable session policy** — `GOOGLE_SESSION_AUTO_REFRESH` (default `True`),
+      `GOOGLE_SESSION_MAX_AGE` (absolute cap, default `None`), and
+      `GOOGLE_SESSION_IDLE_TIMEOUT` (idle cap, default `None`) let you choose anything
+      from an indefinite rolling session to forced periodic re-login. Defaults preserve
+      the previous always-refresh behaviour. See
+      [Choosing a session policy](concepts/session-lifecycle.md#choosing-a-session-policy).
+    - Logout settings — `GOOGLE_TOKEN_REVOKE_ON_LOGOUT` (default `True`) and
+      `GOOGLE_AUTH_LOGOUT_REDIRECT_URL` (default `None`).
+
+### Security
+
+- **`oauth_state` cleared after successful auth** — `callback()` now explicitly removes
+  the OAuth2 CSRF nonce from the session once authentication completes. It is a
+  single-use token and has no purpose after the token exchange; clearing it prevents
+  stale CSRF material from persisting in the authenticated session. Error paths
+  (state-mismatch `400`, `access_denied` redirect) intentionally retain it to allow retry.
+
+### Changed
+
+- **`GOOGLE_AUTH_FINAL_REDIRECT_URL` validation** — The startup system check now uses URL
+  parsing to validate the configured value. A non-empty string that lacks a scheme or host
+  (e.g. a bare relative path like `"/dashboard/"`) produces an `Info`-level system check
+  entry. Empty string and `None` are silently treated as "not configured". Use a
+  fully-qualified URL (`https://myapp.example.com/dashboard/`) to keep system checks clean.
+- **Session-policy-aware landing page** — the built-in `/gauth/` index resolves auth state
+  through `get_credentials()` (so it agrees with `@gauth_required` and `/gauth/session`),
+  adds a **Logout button**, an effective-deadline countdown (earliest of token / max-age /
+  idle), and a targeted "session expired" message naming the governing policy.
+
+### Fixed
+
+- **Scope-reduction crash on re-login** — `callback()` no longer raises
+  `Warning: Scope has changed …` when Google grants fewer scopes than requested (common
+  after a logout that revoked the token); it tolerates the reduced set and logs a warning.
+- **Reliable session recovery** — `callback()` resets the idle clock on re-login, so a
+  stale `gauth_last_active` from a previously idle/expired session can no longer instantly
+  re-expire the fresh one under `GOOGLE_SESSION_IDLE_TIMEOUT`.
+- **`session_status()` matches the guards** — with Django User integration enabled, its
+  `authenticated` flag comes from `request.user.is_authenticated`, agreeing with
+  `@gauth_required` / `@login_required`.
+- **Countdown precision** — the landing-page timer no longer shows sub-second digits.
+
+---
+
 ## v0.2.2
 
 :material-calendar: 2026-06-29
