@@ -32,8 +32,8 @@ from django.urls import reverse  # pylint: disable=E0401
 
 from django_gauth import defaults
 from django_gauth.utilities import (
-    _within_session_policy,
     _touch_last_active,
+    _within_session_policy,
     get_credentials,
 )
 

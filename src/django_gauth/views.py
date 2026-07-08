@@ -62,6 +62,8 @@ def _user_integration_enabled() -> bool:
             defaults.GOOGLE_USER_INTEGRATION,
         )
     )
+
+
 def get_origin_url(
     request: HttpRequest,
     retrieve_from: str = "query",
