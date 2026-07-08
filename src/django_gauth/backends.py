@@ -54,6 +54,10 @@ class GoogleAuthBackend(BaseBackend):
         if id_info is None:
             return None
 
+        # NOTE (v0.5.0 seam): hosted-domain / ALLOWED_EMAIL_DOMAINS restriction
+        # should hook in here — reject id_info whose "hd" claim is not in the
+        # allow-list before the get-or-create runs.
+
         user = get_or_create_user_from_id_info(id_info)
         if user is None:
             return None

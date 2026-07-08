@@ -700,6 +700,76 @@ class IndexViewExtendedTest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("context_data", response.context)
         self.assertFalse(response.context["context_data"]["is_authenticated"])
+        # No prior session → not a policy expiry, just anonymous.
+        self.assertFalse(response.context["context_data"]["session_expired"])
+        self.assertIsNone(
+            response.context["context_data"]["session_expiry"]["expires_at"]
+        )
+
+    def test_index_exposes_login_and_logout_hrefs(self):
+        """The landing page provides both an Authenticate and a Logout control."""
+        response = self.client.get(reverse("django_gauth:index"))
+        context = response.context["context_data"]
+        self.assertEqual(context["login_href"], reverse("django_gauth:login"))
+        self.assertEqual(context["logout_href"], reverse("django_gauth:logout"))
+        # Both buttons are rendered (visibility is toggled client-side by JS).
+        self.assertContains(response, 'id="AuthenticateButton"')
+        self.assertContains(response, 'id="LogoutButton"')
+        self.assertContains(response, reverse("django_gauth:logout"))
+
+    @override_settings(GOOGLE_SESSION_MAX_AGE=300)
+    def test_index_reflects_max_age_expiry(self):
+        """A session past GOOGLE_SESSION_MAX_AGE shows as expired on the landing
+        page (previously it wrongly appeared authenticated)."""
+        from django_gauth.utilities import SESSION_LOGIN_AT_KEY
+
+        session = self.client.session
+        session[settings.CREDENTIALS_SESSION_KEY_NAME] = {
+            "token": "tok",
+            "refresh_token": "rtok",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "scopes": ["openid"],
+        }
+        session["id_info"] = {"exp": time.time() + 3600, "email": "u@example.com"}
+        # login was 10 minutes ago → beyond the 5-minute cap
+        session[SESSION_LOGIN_AT_KEY] = time.time() - 600
+        session.save()
+
+        response = self.client.get(reverse("django_gauth:index"))
+        context = response.context["context_data"]
+        self.assertFalse(context["is_authenticated"])
+        self.assertTrue(context["session_expired"])
+        self.assertEqual(context["session_expiry"]["policy"], "max_age")
+        self.assertEqual(
+            context["session_expiry"]["policy_label"], "maximum session age"
+        )
+        # The re-authentication message is surfaced in the rendered page.
+        self.assertContains(response, "session has expired")
+
+    @override_settings(GOOGLE_SESSION_MAX_AGE=3600)
+    @patch("django_gauth.views.get_credentials")
+    def test_index_authenticated_exposes_effective_expiry(self, mock_get_creds):
+        """When authenticated, the countdown target is the effective policy
+        deadline (max-age here), not just the Google token exp."""
+        from django_gauth.utilities import SESSION_LOGIN_AT_KEY
+
+        mock_get_creds.return_value = object()  # authenticated
+
+        session = self.client.session
+        session["id_info"] = {"exp": time.time() + 7200, "email": "u@example.com"}
+        login_at = time.time()
+        session[SESSION_LOGIN_AT_KEY] = login_at
+        session.save()
+
+        response = self.client.get(reverse("django_gauth:index"))
+        context = response.context["context_data"]
+        self.assertTrue(context["is_authenticated"])
+        self.assertFalse(context["session_expired"])
+        # max-age deadline (login_at + 3600) is earlier than the token exp (7200)
+        self.assertEqual(context["session_expiry"]["policy"], "max_age")
+        self.assertAlmostEqual(
+            context["session_expiry"]["expires_at"], login_at + 3600, delta=2
+        )
 
     @override_settings(
         DJANGO_GAUTH_UI_CONFIG={
@@ -1272,6 +1342,148 @@ class CallbackViewTest(TestCase):
         self.assertIn(settings.CREDENTIALS_SESSION_KEY_NAME, request.session)
         self.assertIn("id_info", request.session)
 
+    @override_settings(
+        SCOPE=[
+            "https://www.googleapis.com/auth/userinfo.email",
+            "https://www.googleapis.com/auth/userinfo.profile",
+            "openid",
+            "https://www.googleapis.com/auth/drive",
+        ]
+    )
+    @patch("django_gauth.views.id_token.verify_oauth2_token")
+    @patch("django_gauth.views.Flow.from_client_config")
+    def test_callback_logs_warning_on_scope_reduction(
+        self, mock_flow_class, mock_verify
+    ):
+        """When Google grants fewer scopes than requested, a warning is logged
+        but the callback still succeeds (no crash)."""
+        from django.contrib.sessions.backends.db import SessionStore
+        from django_gauth.views import callback
+
+        mock_flow_instance = MagicMock()
+        mock_flow_class.return_value = mock_flow_instance
+
+        mock_credentials = MagicMock()
+        mock_credentials.token = "tok"
+        mock_credentials.refresh_token = "rtok"
+        mock_credentials.token_uri = "https://oauth2.googleapis.com/token"
+        # Google drops the drive scope
+        mock_credentials.scopes = [
+            "https://www.googleapis.com/auth/userinfo.email",
+            "https://www.googleapis.com/auth/userinfo.profile",
+            "openid",
+        ]
+        mock_credentials.id_token = "id_tok"
+        mock_flow_instance.credentials = mock_credentials
+        mock_verify.return_value = {"email": "u@example.com", "exp": time.time() + 3600}
+
+        request = self.factory.get("/gauth/login-callback?state=s&code=c")
+        session = SessionStore()
+        session[settings.STATE_KEY_NAME] = "s"
+        session[settings.FINAL_REDIRECT_KEY_NAME] = "http://testserver/"
+        session.create()
+        request.session = session
+
+        with self.assertLogs("django_gauth.views", level="WARNING") as cm:
+            response = callback(request)
+
+        # Callback still succeeds with a redirect
+        self.assertEqual(response.status_code, 302)
+        # A warning was emitted about the dropped scope
+        self.assertTrue(
+            any("drive" in msg for msg in cm.output),
+            f"Expected drive scope in warning log, got: {cm.output}",
+        )
+
+    @override_settings(GOOGLE_SESSION_IDLE_TIMEOUT=60)
+    @patch("django_gauth.views.id_token.verify_oauth2_token")
+    @patch("django_gauth.views.Flow.from_client_config")
+    def test_callback_resets_idle_clock_on_relogin(
+        self, mock_flow_class, mock_verify
+    ):
+        """Re-login must reset the idle clock so a stale gauth_last_active from a
+        prior (expired) session does not immediately expire the fresh one."""
+        from django.contrib.sessions.backends.db import SessionStore
+        from django_gauth.utilities import (
+            SESSION_LAST_ACTIVE_KEY,
+            SESSION_LOGIN_AT_KEY,
+        )
+        from django_gauth.views import callback
+
+        mock_flow_instance = MagicMock()
+        mock_flow_class.return_value = mock_flow_instance
+        mock_credentials = MagicMock()
+        mock_credentials.token = "tok"
+        mock_credentials.refresh_token = "rtok"
+        mock_credentials.token_uri = "https://oauth2.googleapis.com/token"
+        mock_credentials.scopes = settings.SCOPE
+        mock_credentials.id_token = "id_tok"
+        mock_flow_instance.credentials = mock_credentials
+        mock_verify.return_value = {"email": "u@example.com", "exp": time.time() + 3600}
+
+        request = self.factory.get("/gauth/login-callback?state=s&code=c")
+        session = SessionStore()
+        session[settings.STATE_KEY_NAME] = "s"
+        session[settings.FINAL_REDIRECT_KEY_NAME] = "http://testserver/"
+        # Simulate a stale idle stamp left over from a previously-expired session.
+        stale = time.time() - 10_000
+        session[SESSION_LAST_ACTIVE_KEY] = stale
+        session.create()
+        request.session = session
+
+        callback(request)
+
+        # Login time stamped fresh, and the idle clock moved forward past the
+        # stale value so GOOGLE_SESSION_IDLE_TIMEOUT won't fire immediately.
+        self.assertIn(SESSION_LOGIN_AT_KEY, request.session)
+        self.assertGreater(request.session[SESSION_LAST_ACTIVE_KEY], stale)
+
+        # And the fresh session must now pass the policy gate.
+        from django_gauth.utilities import _within_session_policy
+
+        self.assertTrue(_within_session_policy(request.session))
+
+    @patch("django_gauth.views.id_token.verify_oauth2_token")
+    @patch("django_gauth.views.Flow.from_client_config")
+    def test_callback_restores_preexisting_relax_scope_env(
+        self, mock_flow_class, mock_verify
+    ):
+        """A pre-existing OAUTHLIB_RELAX_TOKEN_SCOPE value is restored, not clobbered."""
+        import os
+
+        from django.contrib.sessions.backends.db import SessionStore
+        from django_gauth.views import callback
+
+        mock_flow_instance = MagicMock()
+        mock_flow_class.return_value = mock_flow_instance
+        mock_credentials = MagicMock()
+        mock_credentials.token = "tok"
+        mock_credentials.refresh_token = "rtok"
+        mock_credentials.token_uri = "https://oauth2.googleapis.com/token"
+        mock_credentials.scopes = settings.SCOPE
+        mock_credentials.id_token = "id_tok"
+        mock_flow_instance.credentials = mock_credentials
+        mock_verify.return_value = {"email": "u@example.com", "exp": time.time() + 3600}
+
+        request = self.factory.get("/gauth/login-callback?state=s&code=c")
+        session = SessionStore()
+        session[settings.STATE_KEY_NAME] = "s"
+        session[settings.FINAL_REDIRECT_KEY_NAME] = "http://testserver/"
+        session.create()
+        request.session = session
+
+        prev = os.environ.get("OAUTHLIB_RELAX_TOKEN_SCOPE")
+        os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "sentinel"
+        try:
+            callback(request)
+            # The prior value must be restored after the token exchange.
+            self.assertEqual(os.environ.get("OAUTHLIB_RELAX_TOKEN_SCOPE"), "sentinel")
+        finally:
+            if prev is None:
+                os.environ.pop("OAUTHLIB_RELAX_TOKEN_SCOPE", None)
+            else:
+                os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = prev
+
 
 # ============================================================
 # utilities.py — revoke_google_token (v0.4.0 session lifecycle)
@@ -1641,6 +1853,94 @@ class SessionPolicyTest(TestCase):
         get_credentials(self._request(session))
 
         self.assertNotIn(SESSION_LAST_ACTIVE_KEY, session)
+
+
+# ============================================================
+# utilities.py — get_session_expiry (v0.4.0 landing-page visibility)
+# ============================================================
+class GetSessionExpiryTest(TestCase):
+    """Cover utilities.get_session_expiry (effective deadline + policy)."""
+
+    def test_empty_session_has_no_deadline(self):
+        from django_gauth.utilities import get_session_expiry
+
+        result = get_session_expiry({})
+        self.assertIsNone(result["expires_at"])
+        self.assertIsNone(result["policy"])
+        self.assertFalse(result["expired"])
+
+    def test_token_only_deadline(self):
+        """With no policy configured, the Google token exp governs."""
+        from django_gauth.utilities import get_session_expiry
+
+        exp = time.time() + 3600
+        result = get_session_expiry({"id_info": {"exp": exp}})
+        self.assertEqual(result["expires_at"], exp)
+        self.assertEqual(result["policy"], "token")
+        self.assertFalse(result["expired"])
+
+    @override_settings(GOOGLE_SESSION_MAX_AGE=300)
+    def test_max_age_wins_over_token(self):
+        from django_gauth.utilities import SESSION_LOGIN_AT_KEY, get_session_expiry
+
+        now = time.time()
+        session = {
+            "id_info": {"exp": now + 3600},  # token far away
+            SESSION_LOGIN_AT_KEY: now,  # max-age deadline = now + 300
+        }
+        result = get_session_expiry(session)
+        self.assertAlmostEqual(result["expires_at"], now + 300, delta=1)
+        self.assertEqual(result["policy"], "max_age")
+        self.assertFalse(result["expired"])
+
+    @override_settings(GOOGLE_SESSION_MAX_AGE=300, GOOGLE_SESSION_IDLE_TIMEOUT=60)
+    def test_idle_wins_when_earliest(self):
+        from django_gauth.utilities import (
+            SESSION_LAST_ACTIVE_KEY,
+            SESSION_LOGIN_AT_KEY,
+            get_session_expiry,
+        )
+
+        now = time.time()
+        session = {
+            "id_info": {"exp": now + 3600},
+            SESSION_LOGIN_AT_KEY: now,  # max-age = now + 300
+            SESSION_LAST_ACTIVE_KEY: now,  # idle = now + 60 (earliest)
+        }
+        result = get_session_expiry(session)
+        self.assertAlmostEqual(result["expires_at"], now + 60, delta=1)
+        self.assertEqual(result["policy"], "idle")
+        self.assertFalse(result["expired"])
+
+    @override_settings(GOOGLE_SESSION_MAX_AGE=300)
+    def test_expired_flag_set_when_deadline_passed(self):
+        from django_gauth.utilities import SESSION_LOGIN_AT_KEY, get_session_expiry
+
+        now = time.time()
+        session = {
+            "id_info": {"exp": now + 3600},
+            SESSION_LOGIN_AT_KEY: now - 600,  # max-age deadline was 300s ago
+        }
+        result = get_session_expiry(session)
+        self.assertEqual(result["policy"], "max_age")
+        self.assertTrue(result["expired"])
+
+    @override_settings(GOOGLE_SESSION_IDLE_TIMEOUT=60)
+    def test_pure_read_does_not_mutate_session(self):
+        """The calculator must not disturb the idle clock (no side effects)."""
+        from django_gauth.utilities import (
+            SESSION_LAST_ACTIVE_KEY,
+            get_session_expiry,
+        )
+
+        now = time.time()
+        session = {
+            "id_info": {"exp": now + 3600},
+            SESSION_LAST_ACTIVE_KEY: now - 10,
+        }
+        snapshot = dict(session)
+        get_session_expiry(session)
+        self.assertEqual(session, snapshot)
 
 
 # ============================================================
@@ -2155,7 +2455,7 @@ class SessionStatusUserIdTest(TestCase):
     @override_settings(GOOGLE_USER_INTEGRATION=True)
     @patch("django_gauth.views.get_credentials")
     def test_user_id_set_even_without_google_credentials(self, mock_get_credentials):
-        """Django-authenticated (e.g. admin) but no Google session → user_id set."""
+        """Django-authenticated (e.g. admin) but no Google session → still authenticated."""
         import json
 
         from django.contrib.auth import get_user_model
@@ -2168,8 +2468,10 @@ class SessionStatusUserIdTest(TestCase):
 
         response = self.client.get(reverse("django_gauth:session"))
         data = json.loads(response.content)
-        self.assertFalse(data["authenticated"])  # no Google creds
-        self.assertEqual(data["user_id"], user.pk)  # but Django user is known
+        # With integration ON, authenticated mirrors request.user.is_authenticated
+        # (matching @gauth_required / @login_required), not the Google cred state.
+        self.assertTrue(data["authenticated"])
+        self.assertEqual(data["user_id"], user.pk)
 
 
 # ============================================================
@@ -2186,11 +2488,11 @@ class GauthRequiredDecoratorTest(TestCase):
     def setUp(self):
         self.factory = RequestFactory()
 
-    @patch("django_gauth.decorators.check_gauth_authentication")
-    def test_allows_authenticated_session(self, mock_check):
+    @patch("django_gauth.decorators.get_credentials")
+    def test_allows_authenticated_session(self, mock_get_creds):
         from django_gauth.decorators import gauth_required
 
-        mock_check.return_value = (True, object())  # session-only auth OK
+        mock_get_creds.return_value = object()  # non-None → authenticated
         protected = gauth_required(_protected_ok_view)  # bare usage
         request = self.factory.get("/protected/")
         request.session = {}
@@ -2199,11 +2501,11 @@ class GauthRequiredDecoratorTest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.content, b"ok")
 
-    @patch("django_gauth.decorators.check_gauth_authentication")
-    def test_redirects_unauthenticated(self, mock_check):
+    @patch("django_gauth.decorators.get_credentials")
+    def test_redirects_unauthenticated(self, mock_get_creds):
         from django_gauth.decorators import gauth_required
 
-        mock_check.return_value = (False, None)
+        mock_get_creds.return_value = None
         protected = gauth_required(_protected_ok_view)
         request = self.factory.get("/protected/")
         request.session = {}
@@ -2212,13 +2514,13 @@ class GauthRequiredDecoratorTest(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertIn(reverse("django_gauth:login"), response.url)
 
-    @patch("django_gauth.decorators.check_gauth_authentication")
-    def test_json_response_when_unauthenticated(self, mock_check):
+    @patch("django_gauth.decorators.get_credentials")
+    def test_json_response_when_unauthenticated(self, mock_get_creds):
         import json
 
         from django_gauth.decorators import gauth_required
 
-        mock_check.return_value = (False, None)
+        mock_get_creds.return_value = None
         protected = gauth_required(response="json")(_protected_ok_view)  # parameterised
         request = self.factory.get("/protected/")
         request.session = {}
@@ -2227,11 +2529,11 @@ class GauthRequiredDecoratorTest(TestCase):
         self.assertEqual(response.status_code, 401)
         self.assertFalse(json.loads(response.content)["authenticated"])
 
-    @patch("django_gauth.decorators.check_gauth_authentication")
-    def test_custom_login_url(self, mock_check):
+    @patch("django_gauth.decorators.get_credentials")
+    def test_custom_login_url(self, mock_get_creds):
         from django_gauth.decorators import gauth_required
 
-        mock_check.return_value = (False, None)
+        mock_get_creds.return_value = None
         protected = gauth_required(login_url="/accounts/login/")(_protected_ok_view)
         request = self.factory.get("/protected/")
         request.session = {}
@@ -2255,6 +2557,7 @@ class GauthRequiredDecoratorTest(TestCase):
         user = MagicMock()
         user.is_authenticated = True
         request.user = user
+        request.session = {}
 
         response = protected(request)
         self.assertEqual(response.status_code, 200)
@@ -2271,6 +2574,41 @@ class GauthRequiredDecoratorTest(TestCase):
 
         response = protected(request)
         self.assertEqual(response.status_code, 401)
+
+    @override_settings(GOOGLE_USER_INTEGRATION=True, GOOGLE_SESSION_MAX_AGE=300)
+    def test_integration_blocks_expired_session_policy(self):
+        """Session-policy caps are enforced even when request.user is valid."""
+        import time
+
+        from django_gauth.decorators import gauth_required
+        from django_gauth.utilities import SESSION_LOGIN_AT_KEY
+
+        protected = gauth_required(response="json")(_protected_ok_view)
+        request = self.factory.get("/protected/")
+        user = MagicMock()
+        user.is_authenticated = True
+        request.user = user
+        # Session has a login timestamp that exceeds GOOGLE_SESSION_MAX_AGE.
+        request.session = {SESSION_LOGIN_AT_KEY: time.time() - 600}
+
+        response = protected(request)
+        self.assertEqual(response.status_code, 401)
+
+    @patch("django_gauth.decorators.get_credentials")
+    @override_settings(GOOGLE_SESSION_MAX_AGE=300)
+    def test_session_policy_enforced_via_get_credentials(self, mock_get_creds):
+        """Non-integration path delegates policy enforcement to get_credentials."""
+        from django_gauth.decorators import gauth_required
+
+        # get_credentials returns None when session policy has expired.
+        mock_get_creds.return_value = None
+        protected = gauth_required(response="json")(_protected_ok_view)
+        request = self.factory.get("/protected/")
+        request.session = {}
+
+        response = protected(request)
+        self.assertEqual(response.status_code, 401)
+        mock_get_creds.assert_called_once_with(request)
 
 
 class GauthRequiredMixinTest(TestCase):
@@ -2292,9 +2630,9 @@ class GauthRequiredMixinTest(TestCase):
             setattr(_Protected, key, value)
         return _Protected.as_view()
 
-    @patch("django_gauth.decorators.check_gauth_authentication")
-    def test_mixin_allows_authenticated(self, mock_check):
-        mock_check.return_value = (True, object())
+    @patch("django_gauth.decorators.get_credentials")
+    def test_mixin_allows_authenticated(self, mock_get_creds):
+        mock_get_creds.return_value = object()
         view = self._make_view()
         request = self.factory.get("/p/")
         request.session = {}
@@ -2303,9 +2641,9 @@ class GauthRequiredMixinTest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.content, b"ok")
 
-    @patch("django_gauth.decorators.check_gauth_authentication")
-    def test_mixin_redirects_unauthenticated(self, mock_check):
-        mock_check.return_value = (False, None)
+    @patch("django_gauth.decorators.get_credentials")
+    def test_mixin_redirects_unauthenticated(self, mock_get_creds):
+        mock_get_creds.return_value = None
         view = self._make_view()
         request = self.factory.get("/p/")
         request.session = {}
@@ -2313,9 +2651,9 @@ class GauthRequiredMixinTest(TestCase):
         response = view(request)
         self.assertEqual(response.status_code, 302)
 
-    @patch("django_gauth.decorators.check_gauth_authentication")
-    def test_mixin_json_unauthenticated(self, mock_check):
-        mock_check.return_value = (False, None)
+    @patch("django_gauth.decorators.get_credentials")
+    def test_mixin_json_unauthenticated(self, mock_get_creds):
+        mock_get_creds.return_value = None
         view = self._make_view(gauth_response="json")
         request = self.factory.get("/p/")
         request.session = {}

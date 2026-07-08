@@ -9,9 +9,13 @@ used by the login/logout endpoints:
 - When :ref:`Django User integration <GOOGLE_USER_INTEGRATION>` is enabled,
   authentication is read from ``request.user.is_authenticated`` (so the same
   guard also honours admin/password logins).
-- Otherwise it falls back to the session-only Google check
-  (:func:`~django_gauth.utilities.check_gauth_authentication`), keeping the
+- Otherwise it falls back to the session-lifecycle accessor
+  (:func:`~django_gauth.utilities.get_credentials`), keeping the
   SPA/session-only story intact with no User model required.
+
+In **both** modes the session-policy layer (``GOOGLE_SESSION_MAX_AGE``,
+``GOOGLE_SESSION_IDLE_TIMEOUT``) is enforced so that expired sessions are
+rejected even when Django's auth middleware still considers the user valid.
 
 On failure the guard either issues a ``302`` redirect to the login endpoint
 (``response="redirect"``, the default) or returns a ``401`` JSON body
@@ -27,7 +31,11 @@ from django.shortcuts import redirect  # pylint: disable=E0401
 from django.urls import reverse  # pylint: disable=E0401
 
 from django_gauth import defaults
-from django_gauth.utilities import check_gauth_authentication
+from django_gauth.utilities import (
+    _within_session_policy,
+    _touch_last_active,
+    get_credentials,
+)
 
 __all__ = ["gauth_required", "GauthRequiredMixin"]
 
@@ -38,7 +46,13 @@ def _request_is_authenticated(request) -> bool:  # type: ignore
     """Dual-mode authentication probe shared by the decorator and the mixin.
 
     Reads ``request.user`` when Django User integration is enabled, otherwise
-    falls back to the session-only Google credential check.
+    falls back to the session-lifecycle accessor :func:`get_credentials` which
+    enforces session policy (``GOOGLE_SESSION_MAX_AGE``,
+    ``GOOGLE_SESSION_IDLE_TIMEOUT``) and handles transparent token refresh.
+
+    In *both* modes the session-policy layer is consulted so that absolute-age
+    and idle-timeout caps are respected even when Django's auth middleware still
+    considers the session valid.
     """
     integration_enabled = getattr(
         settings,
@@ -47,9 +61,19 @@ def _request_is_authenticated(request) -> bool:  # type: ignore
     )
     if integration_enabled:
         user = getattr(request, "user", None)
-        return bool(user is not None and user.is_authenticated)
-    authenticated, _ = check_gauth_authentication(request.session)
-    return authenticated
+        if not (user is not None and user.is_authenticated):
+            return False
+        # Enforce session-policy caps for Google-originated logins.
+        # _within_session_policy gracefully returns True when the gauth
+        # timestamps are absent (e.g. admin/password login) — so non-Google
+        # sessions pass through unaffected.
+        if not _within_session_policy(request.session):
+            return False
+        _touch_last_active(request.session)
+        return True
+    # Non-integration path: get_credentials enforces policy, touches idle,
+    # and handles auto-refresh in one shot.
+    return get_credentials(request) is not None
 
 
 def _unauthenticated_response(response_type: str, login_url: Optional[str]):  # type: ignore

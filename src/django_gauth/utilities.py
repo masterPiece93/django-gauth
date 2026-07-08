@@ -20,6 +20,7 @@ __all__ = [
     "RedirectionScheme",
     "revoke_google_token",
     "get_credentials",
+    "get_session_expiry",
     "SESSION_LOGIN_AT_KEY",
     "SESSION_LAST_ACTIVE_KEY",
     "get_or_create_user_from_id_info",
@@ -274,6 +275,63 @@ def get_credentials(request: Any) -> Optional[Credentials]:
     if hasattr(session, "modified"):
         session.modified = True
     return credentials
+
+
+def get_session_expiry(session: Any) -> Dict[str, Any]:
+    """Compute the effective session-expiry deadline and its governing policy.
+
+    Three independent deadlines may apply to an authenticated session; the
+    *earliest* one wins because it is the first constraint the session will hit:
+
+    - ``"token"`` — the Google ID-token expiry (``id_info.exp``).
+    - ``"max_age"`` — the absolute-age cap
+      (``login_at + GOOGLE_SESSION_MAX_AGE``).
+    - ``"idle"`` — the idle timeout
+      (``last_active + GOOGLE_SESSION_IDLE_TIMEOUT``).
+
+    This is a pure read — it never mutates the session — so it is safe to call
+    from status/display surfaces (e.g. the landing page) without disturbing the
+    idle clock.
+
+    Args:
+        session: The Django session (or any mapping) to inspect.
+
+    Returns:
+        A dict ``{"expires_at": float | None, "policy": str | None,
+        "expired": bool}``. ``expires_at`` and ``policy`` are ``None`` when no
+        deadline is known (e.g. an unauthenticated session).
+    """
+    now = time.time()
+    deadlines = []  # list of (deadline_epoch, policy_name)
+
+    id_info = session.get("id_info") or {}
+    token_exp = id_info.get("exp")
+    if token_exp is not None:
+        deadlines.append((float(token_exp), "token"))
+
+    max_age = getattr(
+        settings, "GOOGLE_SESSION_MAX_AGE", defaults.GOOGLE_SESSION_MAX_AGE
+    )
+    login_at = session.get(SESSION_LOGIN_AT_KEY)
+    if max_age is not None and login_at is not None:
+        deadlines.append((float(login_at) + float(max_age), "max_age"))
+
+    idle_timeout = getattr(
+        settings, "GOOGLE_SESSION_IDLE_TIMEOUT", defaults.GOOGLE_SESSION_IDLE_TIMEOUT
+    )
+    last_active = session.get(SESSION_LAST_ACTIVE_KEY)
+    if idle_timeout is not None and last_active is not None:
+        deadlines.append((float(last_active) + float(idle_timeout), "idle"))
+
+    if not deadlines:
+        return {"expires_at": None, "policy": None, "expired": False}
+
+    expires_at, policy = min(deadlines, key=lambda item: item[0])
+    return {
+        "expires_at": expires_at,
+        "policy": policy,
+        "expired": now >= expires_at,
+    }
 
 
 def _resolve_user_setting(name: str) -> Any:
