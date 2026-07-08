@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.3.0] - 2026-07-04
+## [0.3.0] - 2026-07-09
 
 ### Security
 
@@ -49,7 +49,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       `null` unless integrated **and** authenticated).
     - **`gauth_required` decorator** and **`GauthRequiredMixin`** (exported from
       `django_gauth`) — dual-mode view guards (`request.user` when integrated, otherwise
-      the session check) that honour the `response=redirect|json` convention.
+      the session-lifecycle check) that honour the `response=redirect|json` convention.
+      Both routes enforce the session policy (`GOOGLE_SESSION_MAX_AGE` /
+      `GOOGLE_SESSION_IDLE_TIMEOUT`), so a protected view blocks the moment a session
+      exceeds a configured cap — consistent with the `/gauth/session` probe.
     - **Five new settings** — `GOOGLE_USER_INTEGRATION`, `GOOGLE_USER_AUTO_CREATE`,
       `GOOGLE_USER_LOOKUP_FIELD`, `GOOGLE_USER_REQUIRE_VERIFIED_EMAIL`, and
       `GOOGLE_USER_MAPPER` (a dotted-path `(id_info, user, created) -> None` hook).
@@ -98,6 +101,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       and `id_info` back to the session.
     - **`revoke_google_token(token)` helper** — best-effort POST to Google's
       `revoke` endpoint; returns a `bool` and swallows transport errors.
+    - **`get_session_expiry(session)` helper** — a **read-only** accessor that returns the
+      effective session deadline and its governing policy
+      (`{"expires_at", "policy", "expired"}`, earliest of token / max-age / idle) without
+      mutating the session. Powers the landing page's "Session Expiring In" countdown.
     - **Configurable session policy** — three composable settings let you place
       the session anywhere from "indefinite rolling" to "force periodic re-login":
       `GOOGLE_SESSION_AUTO_REFRESH` (default `True`; `False` disables silent
@@ -117,6 +124,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   like `"/dashboard/"`) produces an `Info`-level system check entry. Empty string and
   `None` are silently treated as "not configured" and produce no entry. Previously any
   falsy value — including `""` — triggered the check.
+- **Landing page is now session-policy aware.** The built-in `/gauth/` index resolves its
+  authenticated state through `get_credentials()` (rather than a raw token check), so it
+  agrees with `@gauth_required` and `/gauth/session`. It now surfaces a **Logout button**
+  beside the Authenticate button, an *effective-deadline* countdown (earliest of token /
+  max-age / idle), and a targeted "session expired" message naming the governing policy.
+
+### Fixed
+
+- **`callback()` no longer crashes when Google narrows the granted scopes** (e.g. after a
+  logout that revoked the token, a sensitive scope requiring re-consent is dropped). The
+  token exchange now tolerates a reduced scope set and logs a warning instead of raising
+  `Warning: Scope has changed …`.
+- **A re-login now reliably restores an expired session.** `callback()` resets the idle
+  clock (`gauth_last_active`) alongside the login timestamp, so a stale value left over
+  from a previously idle/expired session can no longer immediately re-expire the fresh
+  one under `GOOGLE_SESSION_IDLE_TIMEOUT`.
+- **`session_status()` authenticated state matches the guards.** With Django User
+  integration enabled, the probe's `authenticated` flag is sourced from
+  `request.user.is_authenticated`, so it agrees with `@gauth_required` and
+  `@login_required` instead of reporting on the Google token alone.
+- **Landing-page countdown** no longer displays sub-second (micro/nanosecond) digits.
 
 ## [0.2.2] - 2026-06-29
 

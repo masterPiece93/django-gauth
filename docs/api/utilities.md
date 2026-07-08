@@ -17,6 +17,7 @@ from django_gauth.utilities import (
     check_gauth_authentication,
     is_valid_google_url,
     get_credentials,
+    get_session_expiry,
     revoke_google_token,
     get_or_create_user_from_id_info,
 )
@@ -219,6 +220,49 @@ def my_protected_api(request):
         return JsonResponse({"detail": "unauthenticated"}, status=401)
     # credentials.token is guaranteed fresh — call a Google API...
 ```
+
+---
+
+## `get_session_expiry(session)`
+
+The **read-only** counterpart to [`get_credentials()`](#get_credentialsrequest). Computes
+the *effective* session-expiry deadline and which policy governs it, **without mutating the
+session** — so it is safe to call from status/display surfaces (the built-in landing page
+uses it to render the "Session Expiring In" countdown) without disturbing the idle clock.
+
+Three independent deadlines may apply; the **earliest wins**, because it is the first
+constraint the session will hit:
+
+| Policy | Deadline | Driven by |
+|--------|----------|-----------|
+| `"token"` | Google ID-token expiry (`id_info.exp`) | the Google session itself |
+| `"max_age"` | `login_at + GOOGLE_SESSION_MAX_AGE` | [`GOOGLE_SESSION_MAX_AGE`](../configuration/settings.md#google_session_max_age) |
+| `"idle"` | `last_active + GOOGLE_SESSION_IDLE_TIMEOUT` | [`GOOGLE_SESSION_IDLE_TIMEOUT`](../configuration/settings.md#google_session_idle_timeout) |
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `session` | `Mapping` | The Django session (or any mapping) to inspect |
+
+**Returns:** `dict` — `{"expires_at": float | None, "policy": str | None, "expired": bool}`.
+`expires_at` and `policy` are `None` when no deadline is known (e.g. an unauthenticated
+session).
+
+```python
+from django_gauth.utilities import get_session_expiry
+
+info = get_session_expiry(request.session)
+# {"expires_at": 1783737600.0, "policy": "idle", "expired": False}
+if info["expired"]:
+    ...  # session has lapsed under `info["policy"]`
+```
+
+!!! tip "Pure read — no side effects"
+    Unlike `get_credentials()`, this function never refreshes the token and never touches
+    the idle clock. Use it purely to *report* session state; use `get_credentials()` (or
+    the [`/gauth/session`](views.md#session_statusrequest) probe) when you need to
+    *enforce* it.
 
 ---
 
