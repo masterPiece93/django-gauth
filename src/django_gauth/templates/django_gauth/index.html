@@ -134,8 +134,16 @@ Author : Ankit Kumar ( ankit.kumar05@telusdigital.com )
             "
             >Session Expiring In :</span>
             <span id="timer-display" style="text-shadow: 1px 1px lightgrey;"></span>
+            {% if context_data.session_expiry.policy_label %}
+                <span id="timer-policy" style="
+                    font-size: smaller;
+                    color: grey;
+                    font-style: italic;
+                    margin-left: 0.35em;
+                ">(governed by {{ context_data.session_expiry.policy_label }})</span>
+            {% endif %}
         </div>
-        <div style="width: 13.5%;">
+        <div style="width: 13.5%; display: flex; gap: 0.4em;">
         <button id="AuthenticateButton" style="
         background-color: {{ context_data.index.status_bar.authenticate_button.style.background_color | default:'white' }};
         width: 100%;
@@ -150,6 +158,22 @@ Author : Ankit Kumar ( ankit.kumar05@telusdigital.com )
                 text-decoration: none;
             ">
             Authenticate
+            </a>
+        </button>
+        <button id="LogoutButton" style="
+        background-color: {{ context_data.index.status_bar.logout_button.style.background_color | default:'white' }};
+        width: 100%;
+        height: 100%;
+        display: none;
+        ">
+            <a href="{{context_data.logout_href}}" style="
+                color: {{ context_data.index.status_bar.logout_button.style.text_color | default:'#b00020' }} !important;
+                font-family: monospace;
+                font-weight: bold;
+                overflow-wrap: break-word;
+                text-decoration: none;
+            ">
+            Logout
             </a>
         </button>
         </div>
@@ -170,6 +194,9 @@ Author : Ankit Kumar ( ankit.kumar05@telusdigital.com )
 
                     {% if context_data.is_authenticated %}
                         You have Successfully Logged-In
+                    {% elif context_data.session_expired %}
+                        Your session has expired{% if context_data.session_expiry.policy_label %} due to {{ context_data.session_expiry.policy_label }}{% endif %}.<br>
+                        <span style="font-size: 24px; color: #b00020;">Please re-authenticate to continue.</span>
                     {% else %}  
                         Please Authenticate
                     {% endif %}
@@ -226,31 +253,52 @@ Author : Ankit Kumar ( ankit.kumar05@telusdigital.com )
         
         let isAuthenticated = "{{context_data.is_authenticated }}"
         if (isAuthenticated === "True") {
-            // don't show the button
+            // authenticated → hide Authenticate, show Logout
             document.getElementById("AuthenticateButton").style.display = "none";
+            document.getElementById("LogoutButton").style.display = "inline-block";
             saveToLocalStorage('_ga', true)
         } else {
-            // show the button
+            // not authenticated → show Authenticate, hide Logout
             document.getElementById("AuthenticateButton").style.display = "inline-block";
+            document.getElementById("LogoutButton").style.display = "none";
             saveToLocalStorage('_ga', false)
         }
         /* --- */
 
-        // Set your target epoch timestamp in seconds (e.g., September 10, 2025, 10:00:00 AM UTC)
-        const targetEpochSeconds = Number("{{ context_data.user_info.exp }}"); // Example: Replace with your actual target
+        // Countdown target = the *effective* session deadline computed server-side:
+        // the earliest of the Google token expiry, GOOGLE_SESSION_MAX_AGE and
+        // GOOGLE_SESSION_IDLE_TIMEOUT. Falls back to the raw token exp only if the
+        // policy value is unavailable (e.g. an older cached session).
+        const sessionExpiresAt = "{{ context_data.session_expiry.expires_at|default_if_none:'' }}";
+        const tokenExp = "{{ context_data.user_info.exp|default_if_none:'' }}";
+        // Floor to whole seconds — expires_at is a float epoch, so its sub-second
+        // fraction would otherwise leak into the displayed seconds value.
+        const targetEpochSeconds = Math.floor(Number(sessionExpiresAt || tokenExp || 0));
         const timerDisplay = document.getElementById('timer-display');
+        const timerPolicy = document.getElementById('timer-policy');
 
         function updateTimer() {
+            // No known deadline (unauthenticated / no session) → nothing to count.
+            if (!targetEpochSeconds) {
+                timerDisplay.innerHTML = "—";
+                return;
+            }
+
             const currentEpochSeconds = Math.floor(Date.now() / 1000);
             let remainingSeconds = targetEpochSeconds - currentEpochSeconds;
 
             if (remainingSeconds <= 0) {
                 timerDisplay.innerHTML = "Expired !";
+                if (timerPolicy) { timerPolicy.style.display = "none"; }
+                // session lapsed → offer Authenticate, hide Logout
                 document.getElementById("AuthenticateButton").style.display = "inline-block"
+                document.getElementById("LogoutButton").style.display = "none"
                 clearInterval(timerInterval);
                 return;
             } else {
+                // session still valid → keep Authenticate hidden, Logout visible
                 document.getElementById("AuthenticateButton").style.display = "none";
+                document.getElementById("LogoutButton").style.display = "inline-block";
             }
 
             const days = Math.floor(remainingSeconds / (60 * 60 * 24));

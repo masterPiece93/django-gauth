@@ -168,6 +168,95 @@ graph LR
 
 ---
 
+## Precedence: why refresh never beats the caps :material-scale-balance:
+
+!!! question "Is this a bug? I set `AUTO_REFRESH=True` **and** `MAX_AGE`, but hitting `/gauth/session` after the max-age elapses does **not** refresh — it returns `authenticated: false`."
+    **No — this is intended behaviour, and it is the whole point of `MAX_AGE`.**
+    `GOOGLE_SESSION_AUTO_REFRESH` and `GOOGLE_SESSION_MAX_AGE` answer two
+    *different* questions, and the cap deliberately wins.
+
+The three knobs are not variations of one another — they govern **distinct
+concerns** and are evaluated in a fixed order. `get_credentials()` checks the
+**caps first** and only *then* considers refreshing:
+
+```mermaid
+flowchart TD
+    A[get_credentials] --> B{Within MAX_AGE?}
+    B -->|No| Z["Return None<br/>authenticated: false"]
+    B -->|Yes| C{Within IDLE_TIMEOUT?}
+    C -->|No| Z
+    C -->|Yes| D{id_info still valid?}
+    D -->|Yes| OK[Return credentials]
+    D -->|No| E{AUTO_REFRESH on<br/>& refresh_token present?}
+    E -->|No| Z
+    E -->|Yes| F[Refresh + re-verify id_token]
+    F --> OK
+
+    style OK fill:#4CAF50,color:white
+    style Z fill:#f44336,color:white
+```
+
+The key insight: **auto-refresh lives *inside* the policy gate, not around it.**
+A refresh can only ever extend a session that is **already within** every
+configured cap. If `MAX_AGE` (or `IDLE_TIMEOUT`) has elapsed, the gate short-
+circuits to "unauthenticated" *before* the refresh branch is ever reached.
+
+!!! danger "If refresh *could* override `MAX_AGE`, the cap would be meaningless"
+    A valid `refresh_token` typically lasts for **months**. If a refresh were
+    allowed to push a session past `login_time + MAX_AGE`, the very next probe
+    would refresh again, and the next, and the next — **forever**. The "force a
+    full re-authentication at least every N seconds" guarantee would silently
+    never fire. So the cap, by design, is measured from the **original login**
+    (`gauth_login_at`, never moved on refresh) and is **not** refreshable.
+
+### The three settings at a glance :material-table-eye:
+
+| | `GOOGLE_SESSION_AUTO_REFRESH` | `GOOGLE_SESSION_MAX_AGE` | `GOOGLE_SESSION_IDLE_TIMEOUT` |
+|---|---|---|---|
+| **Question it answers** | *"When my access token expires, may I mint a new one silently?"* | *"What is the hard ceiling on total session lifetime?"* | *"How long may the session sit unused before it ends?"* |
+| **Type / default** | `bool` · `True` | `int \| None` · `None` | `int \| None` · `None` |
+| **Measured from** | n/a (it's a switch) | **Original login** — `gauth_login_at`, stamped once at `callback` | **Last activity** — `gauth_last_active`, updated on each authenticated access |
+| **Moves forward over time?** | n/a | ❌ **Fixed** — never moves | ✅ **Sliding** — resets on every access |
+| **Can a refresh extend past it?** | — | ❌ **No** (hard cap) | ❌ No, but activity keeps resetting the window |
+| **What "expiry" means here** | Access token expired → mint a fresh one (if on) | Absolute deadline reached → **must re-login** | Inactivity window exceeded → **must re-login** |
+| **Primary purpose** | Convenience — survive Google's ~1 h token cliff | Security — bounded maximum session | Security — reap abandoned sessions |
+| **Typical value** | `True` | `None`, or e.g. `8 * 60 * 60` | `None`, or e.g. `30 * 60` |
+
+### What to expect — and what not to :material-check-decagram:
+
+!!! success "What **to** expect"
+    - **`AUTO_REFRESH=True` alone** → an indefinitely rolling session; the ~1 h
+      Google token cliff is invisible to your users.
+    - **`AUTO_REFRESH=True` + `IDLE_TIMEOUT=30m`** → the session rolls forward
+      *as long as the user stays active*, and ends 30 min after they walk away.
+      This is the setting that "extends on use".
+    - **`AUTO_REFRESH=True` + `MAX_AGE=8h`** → the session is refreshed silently
+      up to **8 hours after the original login**, then requires a fresh `/login`
+      — no matter how active the user is.
+    - **Reaching `MAX_AGE` / `IDLE_TIMEOUT`** → `/gauth/session` returns
+      `authenticated: false`, `@gauth_required` blocks, and the landing page shows
+      an *"expired"* state naming the governing policy. Recovery is a normal
+      `/gauth/login/`.
+
+!!! failure "What **not** to expect"
+    - ❌ **`MAX_AGE` will *not* be extended by `AUTO_REFRESH`.** The cap is a hard
+      ceiling anchored to the original login; a valid refresh token does not lift
+      it. Hitting `/gauth/session` after the cap does **not** revive the session.
+    - ❌ **`MAX_AGE` is *not* a sliding window.** If you want "extend while the
+      user is active, up to a limit", pair it with `IDLE_TIMEOUT` — `MAX_AGE`
+      itself never moves.
+    - ❌ **Re-hitting `/login` mid-request is *not* how you recover.** Once a cap
+      expires you must complete the OAuth round-trip again (a full `/gauth/login/`
+      → Google → callback). The probe alone cannot resurrect a capped session.
+
+!!! tip "Want a session that can be refreshed indefinitely?"
+    Simply **leave `GOOGLE_SESSION_MAX_AGE` unset** (`None`, the default). Then
+    only the Google token expiry and any optional `IDLE_TIMEOUT` apply, and
+    `AUTO_REFRESH` will keep extending the session for as long as Google honours
+    the refresh token.
+
+---
+
 ## The `/gauth/session` probe :material-access-point:
 
 For SPA frontends, [`session_status()`](../api/views.md#session_statusrequest)

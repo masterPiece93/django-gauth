@@ -16,6 +16,7 @@ from django_gauth._checks import (
     ErrorCodes,
     check_project_middlewares,
     check_project_settings,
+    check_user_integration_requirements,
     formulate_check_id,
 )
 
@@ -57,6 +58,7 @@ class DjangoGauthConfig(AppConfig):
     def ready(self) -> None:
         register(Tags.compatibility)(check_project_middlewares)
         register(Tags.django_gauth_compatibility)(check_project_settings)
+        register(Tags.django_gauth_compatibility)(check_user_integration_requirements)
 
 
 @register(Tags.django_gauth_compatibility)

@@ -14,8 +14,18 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+## 0.3.0
+
 ### Added
 
+- **Django User Integration (issue #85)** — an opt-in bridge to Django's own auth system,
+  so `request.user`, `@login_required`, and the admin recognise Google-authenticated
+  visitors — **with no `django-gauth` models and zero migrations**. Off by default; enable
+  with `GOOGLE_USER_INTEGRATION = True` and register `GoogleAuthBackend`. Adds the
+  `get_or_create_user_from_id_info()` helper, `gauth_required` / `GauthRequiredMixin` view
+  guards, five `GOOGLE_USER_*` settings, and a `manage.py check`
+  (`django_gauth.W001`–`W003`). See
+  [Django User Integration](concepts/django-user-integration.md).
 - **Redirection Schemes (issue #77)** — nested & dynamic Google auth out of the box.
   `login()` accepts a `?scheme=` query parameter (`PRESERVE_ORIGIN_QP`,
   `PRESERVE_ORIGIN_HP`, `LANDING_PAGE`, `DEFAULT`) that sends users back to the exact

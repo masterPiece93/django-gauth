@@ -3,12 +3,21 @@ Auth Api's
 ~@ankit.kumar05
 """
 
+import logging
+import os
 import time
 import urllib.parse
 from copy import deepcopy
 from typing import Optional
 
+logger = logging.getLogger(__name__)
+
 from django.conf import settings  # pylint: disable=import-error
+from django.contrib.auth import (
+    authenticate as django_authenticate,  # pylint: disable=import-error
+)
+from django.contrib.auth import login as django_login
+from django.contrib.auth import logout as django_logout
 from django.http import (  # pylint: disable=import-error
     HttpRequest,
     HttpResponseBadRequest,
@@ -24,11 +33,35 @@ from django_gauth import defaults
 from django_gauth.utilities import (
     SESSION_LOGIN_AT_KEY,
     RedirectionScheme,
-    check_gauth_authentication,
+    _touch_last_active,
     credentials_to_dict,
     get_credentials,
+    get_session_expiry,
     revoke_google_token,
 )
+
+# Human-readable labels for the governing session-expiry policy, surfaced on the
+# landing page so a visitor understands *why* a countdown ends / a session drops.
+_SESSION_POLICY_LABELS = {
+    "token": "Google sign-in",
+    "max_age": "maximum session age",
+    "idle": "inactivity timeout",
+}
+
+
+def _user_integration_enabled() -> bool:
+    """Return ``True`` when Django User integration (v0.3.0) is switched on.
+
+    Reads the ``GOOGLE_USER_INTEGRATION`` master switch, falling back to the
+    packaged default (``False``) so the seam is inert unless a project opts in.
+    """
+    return bool(
+        getattr(
+            settings,
+            "GOOGLE_USER_INTEGRATION",
+            defaults.GOOGLE_USER_INTEGRATION,
+        )
+    )
 
 
 def get_origin_url(
@@ -98,7 +131,14 @@ def get_origin_url(
 
 # API
 def index(request: HttpRequest):  # type: ignore
-    is_authenticated, _ = check_gauth_authentication(request.session)
+    # Authentication is resolved through get_credentials so the landing page
+    # honours the full session-lifecycle policy (GOOGLE_SESSION_MAX_AGE and
+    # GOOGLE_SESSION_IDLE_TIMEOUT) and transparent refresh — matching what
+    # @gauth_required and /session enforce. The previous check_gauth_authentication
+    # probe only looked at the raw Google token and so disagreed with the guards.
+    credentials = get_credentials(request)
+    is_authenticated = credentials is not None
+
     id_info = request.session.get("id_info", {})
 
     id_info.pop("iss", None)
@@ -106,11 +146,28 @@ def index(request: HttpRequest):  # type: ignore
     id_info.pop("aud", None)
     id_info.pop("sub", None)
 
+    # Effective session expiry (earliest of token / max-age / idle deadlines) so
+    # the countdown reflects the real policy, not just the ~1h Google token exp.
+    # Computed after get_credentials so any idle-clock touch is already applied.
+    expiry = get_session_expiry(request.session)
+
+    # Distinguish "never signed in" from "signed in but the session policy
+    # expired" so the template can surface a targeted re-authentication message.
+    session_expired = bool(id_info) and not is_authenticated
+
     context: dict = {
         "title": "",
         "login_href": reverse("django_gauth:login"),
+        "logout_href": reverse("django_gauth:logout"),
         "user_info": id_info,
         "is_authenticated": is_authenticated,
+        "session_expired": session_expired,
+        "session_expiry": {
+            "expires_at": expiry["expires_at"],
+            "policy": expiry["policy"],
+            "policy_label": _SESSION_POLICY_LABELS.get(expiry["policy"], ""),
+            "expired": expiry["expired"],
+        },
     }
 
     if hasattr(settings, "DJANGO_GAUTH_UI_CONFIG"):
@@ -268,10 +325,38 @@ def callback(request: HttpRequest):  # type: ignore
     )
 
     flow.redirect_uri = redirect_uri
-    # fetch token
-    flow.fetch_token(authorization_response=authorization_response)
+    # fetch token — Google may grant fewer scopes than originally requested
+    # (e.g. after token revocation, when a sensitive scope requires re-consent,
+    # or when the app is unverified for a particular scope). oauthlib raises a
+    # Warning exception on scope reduction; we temporarily relax that validation
+    # since partial scope grants are expected in Google OAuth.
+    _prev_relax = os.environ.get("OAUTHLIB_RELAX_TOKEN_SCOPE")
+    os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "1"
+    try:
+        flow.fetch_token(authorization_response=authorization_response)
+    finally:
+        if _prev_relax is None:
+            os.environ.pop("OAUTHLIB_RELAX_TOKEN_SCOPE", None)
+        else:
+            os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = _prev_relax
+
     # get credentials
     credentials = flow.credentials
+
+    # Log a warning when Google grants fewer scopes than requested — the app
+    # should still function (with degraded capabilities) but operators benefit
+    # from visibility into the mismatch.
+    granted = set(credentials.scopes or [])
+    requested = set(settings.SCOPE)
+    if granted and granted != requested:
+        dropped = requested - granted
+        if dropped:
+            logger.warning(
+                "Google granted fewer scopes than requested. "
+                "Dropped: %s. Granted: %s.",
+                dropped,
+                granted,
+            )
     # verify token, while also retrieving information about the user
     id_info = id_token.verify_oauth2_token(
         id_token=credentials.id_token,
@@ -279,6 +364,18 @@ def callback(request: HttpRequest):  # type: ignore
         audience=settings.GOOGLE_CLIENT_ID,
         clock_skew_in_seconds=5,
     )
+    # Capture the post-login destination before any session-key rotation.
+    final_redirect = request.session[settings.FINAL_REDIRECT_KEY_NAME]
+
+    # Optional Django User integration (v0.3.0): resolve the verified id_info to
+    # a real auth_user and open a Django auth session, so request.user,
+    # @login_required and the admin recognize the visitor. login() may rotate
+    # the session key, so the Google session state is (re)written afterwards.
+    if _user_integration_enabled():
+        user = django_authenticate(request, id_info=id_info)
+        if user is not None:
+            django_login(request, user)
+
     # session setting
     request.session["id_info"] = id_info
     request.session[settings.CREDENTIALS_SESSION_KEY_NAME] = credentials_to_dict(
@@ -287,12 +384,18 @@ def callback(request: HttpRequest):  # type: ignore
     # Stamp the login time — the anchor for the absolute session-age cap
     # (GOOGLE_SESSION_MAX_AGE). This is set once here and never moved on refresh.
     request.session[SESSION_LOGIN_AT_KEY] = time.time()
+    # Reset the idle clock too. A re-login must establish a *fresh* session-policy
+    # baseline; otherwise a stale ``gauth_last_active`` left over from the prior
+    # (expired) session would make GOOGLE_SESSION_IDLE_TIMEOUT fire immediately,
+    # so the user could never recover a session without a full logout. No-ops
+    # when no idle timeout is configured.
+    _touch_last_active(request.session)
     # oauth_state is a single-use CSRF nonce — remove it now that auth is
     # complete so it doesn't linger in the authenticated session.
     request.session.pop(settings.STATE_KEY_NAME, None)
 
     # redirecting to the final redirect (i.e., logged in page)
-    redirect_response = redirect(request.session[settings.FINAL_REDIRECT_KEY_NAME])
+    redirect_response = redirect(final_redirect)
 
     return redirect_response
 
@@ -332,8 +435,14 @@ def logout(request: HttpRequest):  # type: ignore
         if token:
             revoke_google_token(token)
 
-    # Clear the entire session (rotates the session key).
-    request.session.flush()
+    # Clear the entire session (rotates the session key). When Django User
+    # integration is active, route through auth.logout() so the
+    # user_logged_out signal fires and request.user resets to AnonymousUser;
+    # it flushes the session for us.
+    if _user_integration_enabled():
+        django_logout(request)
+    else:
+        request.session.flush()
 
     if response_type == "json":
         return JsonResponse({"status": "logged_out"})
@@ -351,20 +460,46 @@ def session_status(request: HttpRequest):  # type: ignore
     ~1 hour ID-token lifetime.
 
     Response shape:
-        ``{"authenticated": bool, "user": {...} | null}``
+        ``{"authenticated": bool, "user": {...} | null, "user_id": int | null}``
 
     The ``user`` payload is the sanitized ``id_info`` (opaque ``iss``/``azp``/
     ``aud``/``sub`` claims are stripped), matching the landing page and debug
     endpoint.
+
+    ``user_id`` is always present (v0.3.0). It carries the primary key of the
+    linked Django ``auth_user`` when :ref:`Django User integration
+    <GOOGLE_USER_INTEGRATION>` is enabled *and* ``request.user`` is
+    authenticated; otherwise it is ``null``. This lets a frontend correlate the
+    Google session with a server-side user without exposing the ``sub`` claim.
     """
+    # ADR-7: user_id is always present; null unless integration is on AND the
+    # Django auth session resolved a real user.
+    user_id = None
+    if _user_integration_enabled():
+        request_user = getattr(request, "user", None)
+        if request_user is not None and request_user.is_authenticated:
+            user_id = request_user.pk
+
     credentials = get_credentials(request)
-    if credentials is None:
-        return JsonResponse({"authenticated": False, "user": None})
+
+    # When Django User integration is enabled, authentication status is sourced
+    # from request.user.is_authenticated (matching @gauth_required and
+    # @login_required semantics) rather than from the Google credential state
+    # alone. This ensures the probe agrees with what protected views enforce.
+    if _user_integration_enabled():
+        is_authenticated = user_id is not None
+    else:
+        is_authenticated = credentials is not None
+
+    if not is_authenticated:
+        return JsonResponse({"authenticated": False, "user": None, "user_id": user_id})
 
     user_info = deepcopy(request.session.get("id_info", {}))
     for claim in ("iss", "azp", "aud", "sub"):
         user_info.pop(claim, None)
-    return JsonResponse({"authenticated": True, "user": user_info})
+    return JsonResponse(
+        {"authenticated": True, "user": user_info or None, "user_id": user_id}
+    )
 
 
 def debug_information(request: HttpRequest):  # type: ignore

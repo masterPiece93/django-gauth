@@ -58,6 +58,21 @@ dashboard.
 
 👉 **[Read about Redirection Schemes →](https://masterpiece93.github.io/django-gauth/concepts/redirection-schemes/)**
 
+## ✨ Standout feature — Django User Integration *(opt-in)*
+
+Want `request.user`, `@login_required`, and **admin** login backed by Google — *without* an
+extra `User` model, a token table, or migrations? Flip one switch and `django-gauth` maps
+Google identities onto your project's **existing** `AUTH_USER_MODEL`:
+
+- 👤 **Real `request.user`** — `@login_required`, `LoginRequiredMixin`, and the Django admin just work.
+- 🧩 **Zero `django-gauth` migrations** — get-or-create on your existing `auth_user`; no models of our own.
+- 🛡️ **Safe by default** — verified-email gated, unusable passwords, and a `manage.py check` for misconfig.
+- 🔌 **Dual-mode guards** — `gauth_required` / `GauthRequiredMixin` work with *or* without integration.
+
+> 📌 **Availability:** This feature is available in `django-gauth >= 0.3.0`.
+
+👉 **[Read about Django User Integration →](https://masterpiece93.github.io/django-gauth/concepts/django-user-integration/)**
+
 ## Installation
 
 <!-- Implement Carousal -->

@@ -55,6 +55,21 @@ probe with a configurable
 > has a Headless API). `django-gauth`'s contribution is delivering them in that **stateless,
 > `User`-model-free** setting.
 
+## ✨ Feature Spotlight — Django User Integration <sup>*(opt-in)*</sup>
+
+Want `request.user`, `@login_required`, and **admin** login backed by Google — *without* an
+extra `User` model, a token table, or migrations? Flip one switch and `django-gauth` maps
+Google identities onto your project's **existing** `AUTH_USER_MODEL`:
+
+- 👤 **Real `request.user`** — `@login_required`, `LoginRequiredMixin`, and the Django admin just work.
+- 🧩 **Zero `django-gauth` migrations** — get-or-create on your existing `auth_user`; no models of our own.
+- 🛡️ **Safe by default** — verified-email gated, unusable passwords, and a `manage.py check` that catches misconfig.
+- 🔌 **Dual-mode guards** — `gauth_required` / `GauthRequiredMixin` work with *or* without integration.
+
+> 👉 **Availability:** `django-gauth >= 0.3.0`.
+
+> 👉 **Learn more:** [Django User Integration](https://masterpiece93.github.io/django-gauth/concepts/django-user-integration/)
+
 ## Developer Zone
 
 > [Developer README](./dev.README.md)

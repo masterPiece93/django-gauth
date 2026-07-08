@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 
 from django.conf import settings
 from django.contrib.sessions.models import Session
+from django.http import HttpResponse
 from django.test import TestCase, RequestFactory, override_settings
 from django.test.client import Client
 from django.urls import reverse
@@ -22,6 +23,7 @@ from django_gauth._checks import (
     ErrorCodes,
     check_project_middlewares,
     check_project_settings,
+    check_user_integration_requirements,
     formulate_check_id,
 )
 from django_gauth.utilities import (
@@ -51,6 +53,14 @@ class DefaultsTest(TestCase):
         self.assertTrue(defaults.GOOGLE_SESSION_AUTO_REFRESH)
         self.assertIsNone(defaults.GOOGLE_SESSION_MAX_AGE)
         self.assertIsNone(defaults.GOOGLE_SESSION_IDLE_TIMEOUT)
+
+    def test_user_integration_defaults(self):
+        # Django User integration (v0.3.0) — safe, opt-in defaults
+        self.assertFalse(defaults.GOOGLE_USER_INTEGRATION)
+        self.assertTrue(defaults.GOOGLE_USER_AUTO_CREATE)
+        self.assertEqual(defaults.GOOGLE_USER_LOOKUP_FIELD, "email")
+        self.assertTrue(defaults.GOOGLE_USER_REQUIRE_VERIFIED_EMAIL)
+        self.assertIsNone(defaults.GOOGLE_USER_MAPPER)
 
 
 # ============================================================
@@ -116,6 +126,77 @@ class ErrorCodesTest(TestCase):
 
     def test_formulate_check_id(self):
         self.assertEqual(formulate_check_id("E001"), "django_gauth.E001")
+
+
+class CheckUserIntegrationRequirementsTest(TestCase):
+    """Cover _checks.check_user_integration_requirements (v0.3.0 Phase 3)."""
+
+    def test_no_warnings_when_integration_disabled(self):
+        # Default: GOOGLE_USER_INTEGRATION is off → inert, empty result.
+        self.assertEqual(check_user_integration_requirements(app_configs=None), [])
+
+    @override_settings(
+        GOOGLE_USER_INTEGRATION=True,
+        AUTHENTICATION_BACKENDS=[
+            "django_gauth.backends.GoogleAuthBackend",
+            "django.contrib.auth.backends.ModelBackend",
+        ],
+    )
+    def test_no_warnings_when_fully_wired(self):
+        # auth app + AuthenticationMiddleware come from the base test settings.
+        self.assertEqual(check_user_integration_requirements(app_configs=None), [])
+
+    @override_settings(GOOGLE_USER_INTEGRATION=True)
+    def test_warns_when_backend_missing(self):
+        # Default AUTHENTICATION_BACKENDS = [ModelBackend] → GoogleAuthBackend absent.
+        errors = check_user_integration_requirements(app_configs=None)
+        ids = [e.id for e in errors]
+        self.assertIn(formulate_check_id(ErrorCodes.W003.name), ids)
+
+    @override_settings(
+        GOOGLE_USER_INTEGRATION=True,
+        MIDDLEWARE=[],
+        AUTHENTICATION_BACKENDS=[
+            "django_gauth.backends.GoogleAuthBackend",
+            "django.contrib.auth.backends.ModelBackend",
+        ],
+    )
+    def test_warns_when_auth_middleware_missing(self):
+        errors = check_user_integration_requirements(app_configs=None)
+        ids = [e.id for e in errors]
+        self.assertIn(formulate_check_id(ErrorCodes.W002.name), ids)
+
+    @override_settings(
+        GOOGLE_USER_INTEGRATION=True,
+        AUTHENTICATION_BACKENDS=[
+            "django_gauth.backends.GoogleAuthBackend",
+            "django.contrib.auth.backends.ModelBackend",
+        ],
+    )
+    def test_warns_when_auth_app_missing(self):
+        # Direct-assign INSTALLED_APPS (no registry reload) so the membership
+        # test sees auth absent; restored in finally + by override_settings exit.
+        original = list(settings.INSTALLED_APPS)
+        try:
+            settings.INSTALLED_APPS = [
+                app for app in original if app != "django.contrib.auth"
+            ]
+            errors = check_user_integration_requirements(app_configs=None)
+            ids = [e.id for e in errors]
+            self.assertIn(formulate_check_id(ErrorCodes.W001.name), ids)
+        finally:
+            settings.INSTALLED_APPS = original
+
+    def test_warning_codes_defined(self):
+        self.assertEqual(
+            ErrorCodes.W001.value[0], "MISSING_AUTH_APP_FOR_USER_INTEGRATION"
+        )
+        self.assertEqual(
+            ErrorCodes.W002.value[0], "MISSING_AUTH_MIDDLEWARE_FOR_USER_INTEGRATION"
+        )
+        self.assertEqual(
+            ErrorCodes.W003.value[0], "MISSING_AUTH_BACKEND_FOR_USER_INTEGRATION"
+        )
 
 
 # ============================================================
@@ -619,6 +700,76 @@ class IndexViewExtendedTest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("context_data", response.context)
         self.assertFalse(response.context["context_data"]["is_authenticated"])
+        # No prior session → not a policy expiry, just anonymous.
+        self.assertFalse(response.context["context_data"]["session_expired"])
+        self.assertIsNone(
+            response.context["context_data"]["session_expiry"]["expires_at"]
+        )
+
+    def test_index_exposes_login_and_logout_hrefs(self):
+        """The landing page provides both an Authenticate and a Logout control."""
+        response = self.client.get(reverse("django_gauth:index"))
+        context = response.context["context_data"]
+        self.assertEqual(context["login_href"], reverse("django_gauth:login"))
+        self.assertEqual(context["logout_href"], reverse("django_gauth:logout"))
+        # Both buttons are rendered (visibility is toggled client-side by JS).
+        self.assertContains(response, 'id="AuthenticateButton"')
+        self.assertContains(response, 'id="LogoutButton"')
+        self.assertContains(response, reverse("django_gauth:logout"))
+
+    @override_settings(GOOGLE_SESSION_MAX_AGE=300)
+    def test_index_reflects_max_age_expiry(self):
+        """A session past GOOGLE_SESSION_MAX_AGE shows as expired on the landing
+        page (previously it wrongly appeared authenticated)."""
+        from django_gauth.utilities import SESSION_LOGIN_AT_KEY
+
+        session = self.client.session
+        session[settings.CREDENTIALS_SESSION_KEY_NAME] = {
+            "token": "tok",
+            "refresh_token": "rtok",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "scopes": ["openid"],
+        }
+        session["id_info"] = {"exp": time.time() + 3600, "email": "u@example.com"}
+        # login was 10 minutes ago → beyond the 5-minute cap
+        session[SESSION_LOGIN_AT_KEY] = time.time() - 600
+        session.save()
+
+        response = self.client.get(reverse("django_gauth:index"))
+        context = response.context["context_data"]
+        self.assertFalse(context["is_authenticated"])
+        self.assertTrue(context["session_expired"])
+        self.assertEqual(context["session_expiry"]["policy"], "max_age")
+        self.assertEqual(
+            context["session_expiry"]["policy_label"], "maximum session age"
+        )
+        # The re-authentication message is surfaced in the rendered page.
+        self.assertContains(response, "session has expired")
+
+    @override_settings(GOOGLE_SESSION_MAX_AGE=3600)
+    @patch("django_gauth.views.get_credentials")
+    def test_index_authenticated_exposes_effective_expiry(self, mock_get_creds):
+        """When authenticated, the countdown target is the effective policy
+        deadline (max-age here), not just the Google token exp."""
+        from django_gauth.utilities import SESSION_LOGIN_AT_KEY
+
+        mock_get_creds.return_value = object()  # authenticated
+
+        session = self.client.session
+        session["id_info"] = {"exp": time.time() + 7200, "email": "u@example.com"}
+        login_at = time.time()
+        session[SESSION_LOGIN_AT_KEY] = login_at
+        session.save()
+
+        response = self.client.get(reverse("django_gauth:index"))
+        context = response.context["context_data"]
+        self.assertTrue(context["is_authenticated"])
+        self.assertFalse(context["session_expired"])
+        # max-age deadline (login_at + 3600) is earlier than the token exp (7200)
+        self.assertEqual(context["session_expiry"]["policy"], "max_age")
+        self.assertAlmostEqual(
+            context["session_expiry"]["expires_at"], login_at + 3600, delta=2
+        )
 
     @override_settings(
         DJANGO_GAUTH_UI_CONFIG={
@@ -1191,6 +1342,148 @@ class CallbackViewTest(TestCase):
         self.assertIn(settings.CREDENTIALS_SESSION_KEY_NAME, request.session)
         self.assertIn("id_info", request.session)
 
+    @override_settings(
+        SCOPE=[
+            "https://www.googleapis.com/auth/userinfo.email",
+            "https://www.googleapis.com/auth/userinfo.profile",
+            "openid",
+            "https://www.googleapis.com/auth/drive",
+        ]
+    )
+    @patch("django_gauth.views.id_token.verify_oauth2_token")
+    @patch("django_gauth.views.Flow.from_client_config")
+    def test_callback_logs_warning_on_scope_reduction(
+        self, mock_flow_class, mock_verify
+    ):
+        """When Google grants fewer scopes than requested, a warning is logged
+        but the callback still succeeds (no crash)."""
+        from django.contrib.sessions.backends.db import SessionStore
+        from django_gauth.views import callback
+
+        mock_flow_instance = MagicMock()
+        mock_flow_class.return_value = mock_flow_instance
+
+        mock_credentials = MagicMock()
+        mock_credentials.token = "tok"
+        mock_credentials.refresh_token = "rtok"
+        mock_credentials.token_uri = "https://oauth2.googleapis.com/token"
+        # Google drops the drive scope
+        mock_credentials.scopes = [
+            "https://www.googleapis.com/auth/userinfo.email",
+            "https://www.googleapis.com/auth/userinfo.profile",
+            "openid",
+        ]
+        mock_credentials.id_token = "id_tok"
+        mock_flow_instance.credentials = mock_credentials
+        mock_verify.return_value = {"email": "u@example.com", "exp": time.time() + 3600}
+
+        request = self.factory.get("/gauth/login-callback?state=s&code=c")
+        session = SessionStore()
+        session[settings.STATE_KEY_NAME] = "s"
+        session[settings.FINAL_REDIRECT_KEY_NAME] = "http://testserver/"
+        session.create()
+        request.session = session
+
+        with self.assertLogs("django_gauth.views", level="WARNING") as cm:
+            response = callback(request)
+
+        # Callback still succeeds with a redirect
+        self.assertEqual(response.status_code, 302)
+        # A warning was emitted about the dropped scope
+        self.assertTrue(
+            any("drive" in msg for msg in cm.output),
+            f"Expected drive scope in warning log, got: {cm.output}",
+        )
+
+    @override_settings(GOOGLE_SESSION_IDLE_TIMEOUT=60)
+    @patch("django_gauth.views.id_token.verify_oauth2_token")
+    @patch("django_gauth.views.Flow.from_client_config")
+    def test_callback_resets_idle_clock_on_relogin(
+        self, mock_flow_class, mock_verify
+    ):
+        """Re-login must reset the idle clock so a stale gauth_last_active from a
+        prior (expired) session does not immediately expire the fresh one."""
+        from django.contrib.sessions.backends.db import SessionStore
+        from django_gauth.utilities import (
+            SESSION_LAST_ACTIVE_KEY,
+            SESSION_LOGIN_AT_KEY,
+        )
+        from django_gauth.views import callback
+
+        mock_flow_instance = MagicMock()
+        mock_flow_class.return_value = mock_flow_instance
+        mock_credentials = MagicMock()
+        mock_credentials.token = "tok"
+        mock_credentials.refresh_token = "rtok"
+        mock_credentials.token_uri = "https://oauth2.googleapis.com/token"
+        mock_credentials.scopes = settings.SCOPE
+        mock_credentials.id_token = "id_tok"
+        mock_flow_instance.credentials = mock_credentials
+        mock_verify.return_value = {"email": "u@example.com", "exp": time.time() + 3600}
+
+        request = self.factory.get("/gauth/login-callback?state=s&code=c")
+        session = SessionStore()
+        session[settings.STATE_KEY_NAME] = "s"
+        session[settings.FINAL_REDIRECT_KEY_NAME] = "http://testserver/"
+        # Simulate a stale idle stamp left over from a previously-expired session.
+        stale = time.time() - 10_000
+        session[SESSION_LAST_ACTIVE_KEY] = stale
+        session.create()
+        request.session = session
+
+        callback(request)
+
+        # Login time stamped fresh, and the idle clock moved forward past the
+        # stale value so GOOGLE_SESSION_IDLE_TIMEOUT won't fire immediately.
+        self.assertIn(SESSION_LOGIN_AT_KEY, request.session)
+        self.assertGreater(request.session[SESSION_LAST_ACTIVE_KEY], stale)
+
+        # And the fresh session must now pass the policy gate.
+        from django_gauth.utilities import _within_session_policy
+
+        self.assertTrue(_within_session_policy(request.session))
+
+    @patch("django_gauth.views.id_token.verify_oauth2_token")
+    @patch("django_gauth.views.Flow.from_client_config")
+    def test_callback_restores_preexisting_relax_scope_env(
+        self, mock_flow_class, mock_verify
+    ):
+        """A pre-existing OAUTHLIB_RELAX_TOKEN_SCOPE value is restored, not clobbered."""
+        import os
+
+        from django.contrib.sessions.backends.db import SessionStore
+        from django_gauth.views import callback
+
+        mock_flow_instance = MagicMock()
+        mock_flow_class.return_value = mock_flow_instance
+        mock_credentials = MagicMock()
+        mock_credentials.token = "tok"
+        mock_credentials.refresh_token = "rtok"
+        mock_credentials.token_uri = "https://oauth2.googleapis.com/token"
+        mock_credentials.scopes = settings.SCOPE
+        mock_credentials.id_token = "id_tok"
+        mock_flow_instance.credentials = mock_credentials
+        mock_verify.return_value = {"email": "u@example.com", "exp": time.time() + 3600}
+
+        request = self.factory.get("/gauth/login-callback?state=s&code=c")
+        session = SessionStore()
+        session[settings.STATE_KEY_NAME] = "s"
+        session[settings.FINAL_REDIRECT_KEY_NAME] = "http://testserver/"
+        session.create()
+        request.session = session
+
+        prev = os.environ.get("OAUTHLIB_RELAX_TOKEN_SCOPE")
+        os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = "sentinel"
+        try:
+            callback(request)
+            # The prior value must be restored after the token exchange.
+            self.assertEqual(os.environ.get("OAUTHLIB_RELAX_TOKEN_SCOPE"), "sentinel")
+        finally:
+            if prev is None:
+                os.environ.pop("OAUTHLIB_RELAX_TOKEN_SCOPE", None)
+            else:
+                os.environ["OAUTHLIB_RELAX_TOKEN_SCOPE"] = prev
+
 
 # ============================================================
 # utilities.py — revoke_google_token (v0.4.0 session lifecycle)
@@ -1563,6 +1856,94 @@ class SessionPolicyTest(TestCase):
 
 
 # ============================================================
+# utilities.py — get_session_expiry (v0.4.0 landing-page visibility)
+# ============================================================
+class GetSessionExpiryTest(TestCase):
+    """Cover utilities.get_session_expiry (effective deadline + policy)."""
+
+    def test_empty_session_has_no_deadline(self):
+        from django_gauth.utilities import get_session_expiry
+
+        result = get_session_expiry({})
+        self.assertIsNone(result["expires_at"])
+        self.assertIsNone(result["policy"])
+        self.assertFalse(result["expired"])
+
+    def test_token_only_deadline(self):
+        """With no policy configured, the Google token exp governs."""
+        from django_gauth.utilities import get_session_expiry
+
+        exp = time.time() + 3600
+        result = get_session_expiry({"id_info": {"exp": exp}})
+        self.assertEqual(result["expires_at"], exp)
+        self.assertEqual(result["policy"], "token")
+        self.assertFalse(result["expired"])
+
+    @override_settings(GOOGLE_SESSION_MAX_AGE=300)
+    def test_max_age_wins_over_token(self):
+        from django_gauth.utilities import SESSION_LOGIN_AT_KEY, get_session_expiry
+
+        now = time.time()
+        session = {
+            "id_info": {"exp": now + 3600},  # token far away
+            SESSION_LOGIN_AT_KEY: now,  # max-age deadline = now + 300
+        }
+        result = get_session_expiry(session)
+        self.assertAlmostEqual(result["expires_at"], now + 300, delta=1)
+        self.assertEqual(result["policy"], "max_age")
+        self.assertFalse(result["expired"])
+
+    @override_settings(GOOGLE_SESSION_MAX_AGE=300, GOOGLE_SESSION_IDLE_TIMEOUT=60)
+    def test_idle_wins_when_earliest(self):
+        from django_gauth.utilities import (
+            SESSION_LAST_ACTIVE_KEY,
+            SESSION_LOGIN_AT_KEY,
+            get_session_expiry,
+        )
+
+        now = time.time()
+        session = {
+            "id_info": {"exp": now + 3600},
+            SESSION_LOGIN_AT_KEY: now,  # max-age = now + 300
+            SESSION_LAST_ACTIVE_KEY: now,  # idle = now + 60 (earliest)
+        }
+        result = get_session_expiry(session)
+        self.assertAlmostEqual(result["expires_at"], now + 60, delta=1)
+        self.assertEqual(result["policy"], "idle")
+        self.assertFalse(result["expired"])
+
+    @override_settings(GOOGLE_SESSION_MAX_AGE=300)
+    def test_expired_flag_set_when_deadline_passed(self):
+        from django_gauth.utilities import SESSION_LOGIN_AT_KEY, get_session_expiry
+
+        now = time.time()
+        session = {
+            "id_info": {"exp": now + 3600},
+            SESSION_LOGIN_AT_KEY: now - 600,  # max-age deadline was 300s ago
+        }
+        result = get_session_expiry(session)
+        self.assertEqual(result["policy"], "max_age")
+        self.assertTrue(result["expired"])
+
+    @override_settings(GOOGLE_SESSION_IDLE_TIMEOUT=60)
+    def test_pure_read_does_not_mutate_session(self):
+        """The calculator must not disturb the idle clock (no side effects)."""
+        from django_gauth.utilities import (
+            SESSION_LAST_ACTIVE_KEY,
+            get_session_expiry,
+        )
+
+        now = time.time()
+        session = {
+            "id_info": {"exp": now + 3600},
+            SESSION_LAST_ACTIVE_KEY: now - 10,
+        }
+        snapshot = dict(session)
+        get_session_expiry(session)
+        self.assertEqual(session, snapshot)
+
+
+# ============================================================
 # views.py — logout view (v0.4.0 session lifecycle)
 # ============================================================
 class LogoutViewTest(TestCase):
@@ -1664,3 +2045,638 @@ class SessionStatusViewTest(TestCase):
         data = json.loads(response.content)
         self.assertFalse(data["authenticated"])
         self.assertIsNone(data["user"])
+
+
+# ============================================================
+# utilities.py — get_or_create_user_from_id_info (v0.3.0 User integration)
+# ============================================================
+def _test_user_mapper(id_info, user, created):  # noqa: ARG001
+    """Module-level mapper used by the GOOGLE_USER_MAPPER test (dotted-path)."""
+    user.first_name = "MAPPED"
+    user.last_name = "created" if created else "existing"
+
+
+class GetOrCreateUserTest(TestCase):
+    """Cover utilities.get_or_create_user_from_id_info (model-free get-or-create)."""
+
+    def _verified(self, **extra):
+        info = {
+            "email": "alice@example.com",
+            "email_verified": True,
+            "given_name": "Alice",
+            "family_name": "Smith",
+        }
+        info.update(extra)
+        return info
+
+    def test_empty_id_info_returns_none(self):
+        from django_gauth.utilities import get_or_create_user_from_id_info
+
+        self.assertIsNone(get_or_create_user_from_id_info({}))
+
+    @override_settings(GOOGLE_USER_REQUIRE_VERIFIED_EMAIL=True)
+    def test_unverified_email_rejected(self):
+        from django_gauth.utilities import get_or_create_user_from_id_info
+
+        result = get_or_create_user_from_id_info(self._verified(email_verified=False))
+        self.assertIsNone(result)
+
+    @override_settings(GOOGLE_USER_REQUIRE_VERIFIED_EMAIL=False)
+    def test_unverified_allowed_when_not_required(self):
+        from django_gauth.utilities import get_or_create_user_from_id_info
+
+        user = get_or_create_user_from_id_info(self._verified(email_verified=False))
+        self.assertIsNotNone(user)
+        self.assertEqual(user.email, "alice@example.com")
+
+    def test_missing_email_returns_none(self):
+        from django_gauth.utilities import get_or_create_user_from_id_info
+
+        self.assertIsNone(get_or_create_user_from_id_info({"email_verified": True}))
+
+    def test_creates_user_when_absent(self):
+        from django.contrib.auth import get_user_model
+
+        from django_gauth.utilities import get_or_create_user_from_id_info
+
+        user_model = get_user_model()
+        self.assertFalse(
+            user_model.objects.filter(email="alice@example.com").exists()
+        )
+
+        user = get_or_create_user_from_id_info(self._verified())
+
+        self.assertIsNotNone(user)
+        self.assertEqual(user.email, "alice@example.com")
+        self.assertEqual(user.username, "alice")
+        # default mapper populated the name fields
+        self.assertEqual(user.first_name, "Alice")
+        self.assertEqual(user.last_name, "Smith")
+        # OAuth users authenticate via Google — never a local password
+        self.assertFalse(user.has_usable_password())
+
+    def test_returns_existing_user_without_creating(self):
+        from django.contrib.auth import get_user_model
+
+        from django_gauth.utilities import get_or_create_user_from_id_info
+
+        user_model = get_user_model()
+        existing = user_model.objects.create(
+            username="alice", email="alice@example.com"
+        )
+
+        user = get_or_create_user_from_id_info(self._verified())
+
+        self.assertEqual(user.pk, existing.pk)
+        self.assertEqual(
+            user_model.objects.filter(email="alice@example.com").count(), 1
+        )
+
+    def test_case_insensitive_match(self):
+        from django.contrib.auth import get_user_model
+
+        from django_gauth.utilities import get_or_create_user_from_id_info
+
+        user_model = get_user_model()
+        existing = user_model.objects.create(
+            username="alice", email="Alice@Example.com"
+        )
+
+        user = get_or_create_user_from_id_info(
+            self._verified(email="alice@example.com")
+        )
+        self.assertEqual(user.pk, existing.pk)
+
+    @override_settings(GOOGLE_USER_AUTO_CREATE=False)
+    def test_no_create_when_disabled_returns_none(self):
+        from django_gauth.utilities import get_or_create_user_from_id_info
+
+        self.assertIsNone(get_or_create_user_from_id_info(self._verified()))
+
+    def test_username_collision_is_uniquified(self):
+        from django.contrib.auth import get_user_model
+
+        from django_gauth.utilities import get_or_create_user_from_id_info
+
+        user_model = get_user_model()
+        # occupy the natural username 'alice' with a different account
+        user_model.objects.create(username="alice", email="someone-else@example.com")
+
+        user = get_or_create_user_from_id_info(
+            self._verified(email="alice@example.com")
+        )
+        self.assertEqual(user.email, "alice@example.com")
+        self.assertNotEqual(user.username, "alice")
+        self.assertTrue(user.username.startswith("alice"))
+
+    @override_settings(GOOGLE_USER_LOOKUP_FIELD="username")
+    def test_custom_lookup_field_missing_value_returns_none(self):
+        from django_gauth.utilities import get_or_create_user_from_id_info
+
+        # id_info carries no 'username' claim → no lookup value → refuse sign-in
+        self.assertIsNone(get_or_create_user_from_id_info(self._verified()))
+
+    @override_settings(
+        GOOGLE_USER_MAPPER="tests.test_coverage_boost._test_user_mapper"
+    )
+    def test_custom_mapper_applied(self):
+        from django_gauth.utilities import get_or_create_user_from_id_info
+
+        user = get_or_create_user_from_id_info(self._verified())
+        self.assertEqual(user.first_name, "MAPPED")
+        self.assertEqual(user.last_name, "created")
+
+    def test_build_new_user_email_as_username_branch(self):
+        # Directly exercise the "email is the username" branch of _build_new_user
+        from django_gauth.utilities import _build_new_user
+
+        fake_model = MagicMock()
+        fake_model.USERNAME_FIELD = "email"
+        fake_model.EMAIL_FIELD = "email"
+
+        _build_new_user(fake_model, "eva@example.com")
+
+        fake_model.assert_called_once_with(email="eva@example.com")
+        fake_model.return_value.set_unusable_password.assert_called_once()
+
+
+# ============================================================
+# backends.py — GoogleAuthBackend (v0.3.0 User integration)
+# ============================================================
+class GoogleAuthBackendTest(TestCase):
+    """Cover backends.GoogleAuthBackend"""
+
+    def test_authenticate_without_id_info_opts_out(self):
+        from django_gauth.backends import GoogleAuthBackend
+
+        # No id_info → backend must stay passive so ModelBackend can handle it
+        self.assertIsNone(GoogleAuthBackend().authenticate(None, id_info=None))
+
+    @patch("django_gauth.backends.get_or_create_user_from_id_info")
+    def test_authenticate_returns_active_user(self, mock_goc):
+        from django_gauth.backends import GoogleAuthBackend
+
+        user = MagicMock()
+        user.is_active = True
+        mock_goc.return_value = user
+
+        result = GoogleAuthBackend().authenticate(None, id_info={"email": "a@b.com"})
+        self.assertIs(result, user)
+
+    @patch("django_gauth.backends.get_or_create_user_from_id_info")
+    def test_authenticate_returns_none_when_user_refused(self, mock_goc):
+        from django_gauth.backends import GoogleAuthBackend
+
+        mock_goc.return_value = None
+        result = GoogleAuthBackend().authenticate(None, id_info={"email": "a@b.com"})
+        self.assertIsNone(result)
+
+    @patch("django_gauth.backends.get_or_create_user_from_id_info")
+    def test_authenticate_rejects_inactive_user(self, mock_goc):
+        from django_gauth.backends import GoogleAuthBackend
+
+        user = MagicMock()
+        user.is_active = False
+        mock_goc.return_value = user
+
+        result = GoogleAuthBackend().authenticate(None, id_info={"email": "a@b.com"})
+        self.assertIsNone(result)
+
+    def test_get_user_returns_existing(self):
+        from django.contrib.auth import get_user_model
+
+        from django_gauth.backends import GoogleAuthBackend
+
+        user_model = get_user_model()
+        user = user_model.objects.create(username="bob", email="bob@example.com")
+
+        self.assertEqual(GoogleAuthBackend().get_user(user.pk), user)
+
+    def test_get_user_missing_returns_none(self):
+        from django_gauth.backends import GoogleAuthBackend
+
+        self.assertIsNone(GoogleAuthBackend().get_user(999999))
+
+
+# ============================================================
+# views.py — callback + Django User integration (v0.3.0, Phase 2)
+# ============================================================
+class CallbackUserIntegrationTest(TestCase):
+    """Cover views.callback's opt-in authenticate()/login() seam."""
+
+    def setUp(self):
+        self.factory = RequestFactory()
+
+    def _mock_flow(self, mock_flow_class):
+        mock_flow_instance = MagicMock()
+        mock_flow_class.return_value = mock_flow_instance
+        creds = MagicMock()
+        creds.token = "access_token"
+        creds.refresh_token = "refresh_token"
+        creds.token_uri = "https://oauth2.googleapis.com/token"
+        creds.client_id = settings.GOOGLE_CLIENT_ID
+        creds.client_secret = settings.GOOGLE_CLIENT_SECRET
+        creds.scopes = ["openid"]
+        creds.id_token = "fake_id_token"
+        mock_flow_instance.credentials = creds
+        return mock_flow_instance
+
+    def _request(self):
+        from django.contrib.auth.models import AnonymousUser
+        from django.contrib.sessions.backends.db import SessionStore
+
+        request = self.factory.get(
+            "/gauth/login-callback?state=test_state&code=test_code"
+        )
+        session = SessionStore()
+        session[settings.STATE_KEY_NAME] = "test_state"
+        session[settings.FINAL_REDIRECT_KEY_NAME] = "http://testserver/gauth/"
+        session.create()
+        request.session = session
+        request.user = AnonymousUser()  # emulate AuthenticationMiddleware
+        return request
+
+    @override_settings(
+        GOOGLE_USER_INTEGRATION=True,
+        AUTHENTICATION_BACKENDS=[
+            "django_gauth.backends.GoogleAuthBackend",
+            "django.contrib.auth.backends.ModelBackend",
+        ],
+    )
+    @patch("django_gauth.views.id_token.verify_oauth2_token")
+    @patch("django_gauth.views.Flow.from_client_config")
+    def test_callback_logs_in_django_user_when_integrated(
+        self, mock_flow_class, mock_verify
+    ):
+        from django.contrib.auth import SESSION_KEY, get_user_model
+
+        from django_gauth.views import callback
+
+        self._mock_flow(mock_flow_class)
+        mock_verify.return_value = {
+            "email": "carol@example.com",
+            "email_verified": True,
+            "given_name": "Carol",
+            "family_name": "Jones",
+            "exp": time.time() + 3600,
+        }
+        request = self._request()
+
+        response = callback(request)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, "http://testserver/gauth/")
+        # A real auth_user was created + a Django auth session was opened.
+        user = get_user_model().objects.get(email="carol@example.com")
+        self.assertEqual(request.session[SESSION_KEY], str(user.pk))
+        self.assertEqual(request.user, user)
+        # Google session state still lives alongside the Django auth session.
+        self.assertIn("id_info", request.session)
+        self.assertIn(settings.CREDENTIALS_SESSION_KEY_NAME, request.session)
+
+    @override_settings(
+        GOOGLE_USER_INTEGRATION=True,
+        GOOGLE_USER_REQUIRE_VERIFIED_EMAIL=True,
+        AUTHENTICATION_BACKENDS=[
+            "django_gauth.backends.GoogleAuthBackend",
+            "django.contrib.auth.backends.ModelBackend",
+        ],
+    )
+    @patch("django_gauth.views.id_token.verify_oauth2_token")
+    @patch("django_gauth.views.Flow.from_client_config")
+    def test_callback_skips_login_when_user_refused(
+        self, mock_flow_class, mock_verify
+    ):
+        from django.contrib.auth import SESSION_KEY
+
+        from django_gauth.views import callback
+
+        self._mock_flow(mock_flow_class)
+        # Unverified email → backend returns None → no login, flow still completes.
+        mock_verify.return_value = {
+            "email": "dan@example.com",
+            "email_verified": False,
+            "exp": time.time() + 3600,
+        }
+        request = self._request()
+
+        response = callback(request)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertNotIn(SESSION_KEY, request.session)
+        # Google session state is still written even though no Django login.
+        self.assertIn("id_info", request.session)
+        self.assertIn(settings.CREDENTIALS_SESSION_KEY_NAME, request.session)
+
+
+# ============================================================
+# views.py — logout + Django User integration (v0.3.0, Phase 2)
+# ============================================================
+class LogoutUserIntegrationTest(TestCase):
+    """Cover views.logout routing through auth.logout() when integrated."""
+
+    def setUp(self):
+        self.client = Client()
+
+    @override_settings(GOOGLE_USER_INTEGRATION=True)
+    def test_logout_clears_django_auth_session(self):
+        from django.contrib.auth import SESSION_KEY, get_user_model
+
+        user = get_user_model().objects.create(
+            username="erin", email="erin@example.com"
+        )
+        self.client.force_login(user)
+        # sanity: the Django auth session key exists before logout
+        self.assertIn(SESSION_KEY, self.client.session)
+
+        response = self.client.get(reverse("django_gauth:logout") + "?response=json")
+        self.assertEqual(response.status_code, 200)
+        # auth.logout() flushed the session → Django auth key is gone.
+        self.assertNotIn(SESSION_KEY, self.client.session)
+
+
+# ============================================================
+# views.py — session_status user_id field (v0.3.0, ADR-7, Phase 2)
+# ============================================================
+class SessionStatusUserIdTest(TestCase):
+    """Cover the ADR-7 top-level user_id field in session_status."""
+
+    def setUp(self):
+        self.client = Client()
+
+    @patch("django_gauth.views.get_credentials")
+    def test_user_id_present_and_null_when_integration_off(self, mock_get_credentials):
+        import json
+
+        mock_get_credentials.return_value = MagicMock()  # Google-authenticated
+        session = self.client.session
+        session["id_info"] = {"email": "f@example.com"}
+        session.save()
+
+        response = self.client.get(reverse("django_gauth:session"))
+        data = json.loads(response.content)
+        self.assertTrue(data["authenticated"])
+        self.assertIn("user_id", data)  # ADR-7: always present
+        self.assertIsNone(data["user_id"])  # ...null unless integrated + authed
+
+    @override_settings(GOOGLE_USER_INTEGRATION=True)
+    @patch("django_gauth.views.get_credentials")
+    def test_user_id_null_when_integrated_but_anonymous(self, mock_get_credentials):
+        import json
+
+        mock_get_credentials.return_value = None  # unauthenticated
+        response = self.client.get(reverse("django_gauth:session"))
+        data = json.loads(response.content)
+        self.assertFalse(data["authenticated"])
+        self.assertIn("user_id", data)
+        self.assertIsNone(data["user_id"])
+
+    @override_settings(GOOGLE_USER_INTEGRATION=True)
+    @patch("django_gauth.views.get_credentials")
+    def test_user_id_populated_when_integrated_and_authed(self, mock_get_credentials):
+        import json
+
+        from django.contrib.auth import get_user_model
+
+        user = get_user_model().objects.create(
+            username="gwen", email="gwen@example.com"
+        )
+        self.client.force_login(user)
+        mock_get_credentials.return_value = MagicMock()
+        session = self.client.session
+        session["id_info"] = {"email": "gwen@example.com"}
+        session.save()
+
+        response = self.client.get(reverse("django_gauth:session"))
+        data = json.loads(response.content)
+        self.assertTrue(data["authenticated"])
+        self.assertEqual(data["user_id"], user.pk)
+
+    @override_settings(GOOGLE_USER_INTEGRATION=True)
+    @patch("django_gauth.views.get_credentials")
+    def test_user_id_set_even_without_google_credentials(self, mock_get_credentials):
+        """Django-authenticated (e.g. admin) but no Google session → still authenticated."""
+        import json
+
+        from django.contrib.auth import get_user_model
+
+        user = get_user_model().objects.create(
+            username="hank", email="hank@example.com"
+        )
+        self.client.force_login(user)
+        mock_get_credentials.return_value = None  # no Google credentials
+
+        response = self.client.get(reverse("django_gauth:session"))
+        data = json.loads(response.content)
+        # With integration ON, authenticated mirrors request.user.is_authenticated
+        # (matching @gauth_required / @login_required), not the Google cred state.
+        self.assertTrue(data["authenticated"])
+        self.assertEqual(data["user_id"], user.pk)
+
+
+# ============================================================
+# decorators.py — gauth_required (v0.3.0 Phase 4)
+# ============================================================
+def _protected_ok_view(request):  # noqa: ARG001
+    """Dummy protected view used by the decorator/mixin tests."""
+    return HttpResponse("ok")
+
+
+class GauthRequiredDecoratorTest(TestCase):
+    """Cover decorators.gauth_required (dual-mode + response=redirect|json)."""
+
+    def setUp(self):
+        self.factory = RequestFactory()
+
+    @patch("django_gauth.decorators.get_credentials")
+    def test_allows_authenticated_session(self, mock_get_creds):
+        from django_gauth.decorators import gauth_required
+
+        mock_get_creds.return_value = object()  # non-None → authenticated
+        protected = gauth_required(_protected_ok_view)  # bare usage
+        request = self.factory.get("/protected/")
+        request.session = {}
+
+        response = protected(request)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"ok")
+
+    @patch("django_gauth.decorators.get_credentials")
+    def test_redirects_unauthenticated(self, mock_get_creds):
+        from django_gauth.decorators import gauth_required
+
+        mock_get_creds.return_value = None
+        protected = gauth_required(_protected_ok_view)
+        request = self.factory.get("/protected/")
+        request.session = {}
+
+        response = protected(request)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse("django_gauth:login"), response.url)
+
+    @patch("django_gauth.decorators.get_credentials")
+    def test_json_response_when_unauthenticated(self, mock_get_creds):
+        import json
+
+        from django_gauth.decorators import gauth_required
+
+        mock_get_creds.return_value = None
+        protected = gauth_required(response="json")(_protected_ok_view)  # parameterised
+        request = self.factory.get("/protected/")
+        request.session = {}
+
+        response = protected(request)
+        self.assertEqual(response.status_code, 401)
+        self.assertFalse(json.loads(response.content)["authenticated"])
+
+    @patch("django_gauth.decorators.get_credentials")
+    def test_custom_login_url(self, mock_get_creds):
+        from django_gauth.decorators import gauth_required
+
+        mock_get_creds.return_value = None
+        protected = gauth_required(login_url="/accounts/login/")(_protected_ok_view)
+        request = self.factory.get("/protected/")
+        request.session = {}
+
+        response = protected(request)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, "/accounts/login/")
+
+    def test_invalid_response_raises(self):
+        from django_gauth.decorators import gauth_required
+
+        with self.assertRaises(ValueError):
+            gauth_required(response="xml")
+
+    @override_settings(GOOGLE_USER_INTEGRATION=True)
+    def test_integration_allows_authenticated_user(self):
+        from django_gauth.decorators import gauth_required
+
+        protected = gauth_required(_protected_ok_view)
+        request = self.factory.get("/protected/")
+        user = MagicMock()
+        user.is_authenticated = True
+        request.user = user
+        request.session = {}
+
+        response = protected(request)
+        self.assertEqual(response.status_code, 200)
+
+    @override_settings(GOOGLE_USER_INTEGRATION=True)
+    def test_integration_blocks_anonymous_user(self):
+        from django.contrib.auth.models import AnonymousUser
+
+        from django_gauth.decorators import gauth_required
+
+        protected = gauth_required(response="json")(_protected_ok_view)
+        request = self.factory.get("/protected/")
+        request.user = AnonymousUser()
+
+        response = protected(request)
+        self.assertEqual(response.status_code, 401)
+
+    @override_settings(GOOGLE_USER_INTEGRATION=True, GOOGLE_SESSION_MAX_AGE=300)
+    def test_integration_blocks_expired_session_policy(self):
+        """Session-policy caps are enforced even when request.user is valid."""
+        import time
+
+        from django_gauth.decorators import gauth_required
+        from django_gauth.utilities import SESSION_LOGIN_AT_KEY
+
+        protected = gauth_required(response="json")(_protected_ok_view)
+        request = self.factory.get("/protected/")
+        user = MagicMock()
+        user.is_authenticated = True
+        request.user = user
+        # Session has a login timestamp that exceeds GOOGLE_SESSION_MAX_AGE.
+        request.session = {SESSION_LOGIN_AT_KEY: time.time() - 600}
+
+        response = protected(request)
+        self.assertEqual(response.status_code, 401)
+
+    @patch("django_gauth.decorators.get_credentials")
+    @override_settings(GOOGLE_SESSION_MAX_AGE=300)
+    def test_session_policy_enforced_via_get_credentials(self, mock_get_creds):
+        """Non-integration path delegates policy enforcement to get_credentials."""
+        from django_gauth.decorators import gauth_required
+
+        # get_credentials returns None when session policy has expired.
+        mock_get_creds.return_value = None
+        protected = gauth_required(response="json")(_protected_ok_view)
+        request = self.factory.get("/protected/")
+        request.session = {}
+
+        response = protected(request)
+        self.assertEqual(response.status_code, 401)
+        mock_get_creds.assert_called_once_with(request)
+
+
+class GauthRequiredMixinTest(TestCase):
+    """Cover decorators.GauthRequiredMixin (dual-mode dispatch guard)."""
+
+    def setUp(self):
+        self.factory = RequestFactory()
+
+    def _make_view(self, **attrs):
+        from django.views import View
+
+        from django_gauth.decorators import GauthRequiredMixin
+
+        class _Protected(GauthRequiredMixin, View):
+            def get(self, request, *args, **kwargs):  # noqa: ARG002
+                return HttpResponse("ok")
+
+        for key, value in attrs.items():
+            setattr(_Protected, key, value)
+        return _Protected.as_view()
+
+    @patch("django_gauth.decorators.get_credentials")
+    def test_mixin_allows_authenticated(self, mock_get_creds):
+        mock_get_creds.return_value = object()
+        view = self._make_view()
+        request = self.factory.get("/p/")
+        request.session = {}
+
+        response = view(request)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"ok")
+
+    @patch("django_gauth.decorators.get_credentials")
+    def test_mixin_redirects_unauthenticated(self, mock_get_creds):
+        mock_get_creds.return_value = None
+        view = self._make_view()
+        request = self.factory.get("/p/")
+        request.session = {}
+
+        response = view(request)
+        self.assertEqual(response.status_code, 302)
+
+    @patch("django_gauth.decorators.get_credentials")
+    def test_mixin_json_unauthenticated(self, mock_get_creds):
+        mock_get_creds.return_value = None
+        view = self._make_view(gauth_response="json")
+        request = self.factory.get("/p/")
+        request.session = {}
+
+        response = view(request)
+        self.assertEqual(response.status_code, 401)
+
+    def test_mixin_invalid_response_raises(self):
+        view = self._make_view(gauth_response="xml")
+        request = self.factory.get("/p/")
+        request.session = {}
+
+        with self.assertRaises(ValueError):
+            view(request)
+
+    @override_settings(GOOGLE_USER_INTEGRATION=True)
+    def test_mixin_integration_blocks_anonymous(self):
+        from django.contrib.auth.models import AnonymousUser
+
+        view = self._make_view(gauth_response="json")
+        request = self.factory.get("/p/")
+        request.user = AnonymousUser()
+
+        response = view(request)
+        self.assertEqual(response.status_code, 401)
+

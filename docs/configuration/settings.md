@@ -224,6 +224,15 @@ All settings are defined in your Django project's `settings.py`.
         absolute re-authentication interval. This setting enforces exactly that,
         independent of whether Google would still honour the refresh token.
 
+    !!! warning "The cap is **not** lifted by `GOOGLE_SESSION_AUTO_REFRESH`"
+        This is a **hard ceiling**, measured from the original login and **never**
+        moved by a refresh. With `AUTO_REFRESH=True` *and* `MAX_AGE` set, hitting
+        `/gauth/session` after the cap elapses returns `authenticated: false` — it
+        does **not** refresh. That is intended: an ever-refreshable cap would never
+        fire. For "extend while active, up to a limit", pair it with
+        `GOOGLE_SESSION_IDLE_TIMEOUT`. See
+        [Session Lifecycle → Precedence](../concepts/session-lifecycle.md#precedence-why-refresh-never-beats-the-caps).
+
 ### `GOOGLE_SESSION_IDLE_TIMEOUT`
 
 :   **Idle timeout**, in seconds. When set, a session that has been inactive for
@@ -268,6 +277,96 @@ All settings are defined in your Django project's `settings.py`.
 
 ---
 
+## Django User Integration Settings
+
+!!! abstract "Opt-in — off by default"
+    These settings power the optional bridge to Django's own auth system
+    (`request.user`, `@login_required`, the admin). They do **nothing** unless
+    `GOOGLE_USER_INTEGRATION = True`. See
+    [Django User Integration](../concepts/django-user-integration.md) for the full
+    walkthrough, including the required `AUTHENTICATION_BACKENDS` entry.
+
+### `GOOGLE_USER_INTEGRATION`
+
+:   Master switch. When `True`, a successful callback also opens a Django auth session
+    (via `GoogleAuthBackend`), so `request.user` is the Google-authenticated user.
+
+    ```python
+    GOOGLE_USER_INTEGRATION = True
+    ```
+
+    **Type:** `bool` · **Default:** `False`
+
+    !!! warning "Also register the backend"
+        Enabling this flag is not enough on its own — add the backend to
+        `AUTHENTICATION_BACKENDS` (keep `ModelBackend` too):
+
+        ```python
+        AUTHENTICATION_BACKENDS = [
+            "django_gauth.backends.GoogleAuthBackend",
+            "django.contrib.auth.backends.ModelBackend",
+        ]
+        ```
+
+        `manage.py check` will warn (`django_gauth.W001`–`W003`) if the backend,
+        `django.contrib.auth`, or `AuthenticationMiddleware` is missing.
+
+### `GOOGLE_USER_AUTO_CREATE`
+
+:   Whether to create a new `User` when no existing account matches the Google identity.
+    When `False`, only pre-existing users can sign in (a missing match is refused).
+
+    ```python
+    GOOGLE_USER_AUTO_CREATE = True
+    ```
+
+    **Type:** `bool` · **Default:** `True`
+
+### `GOOGLE_USER_LOOKUP_FIELD`
+
+:   The `User` field used to find an existing account. The match is **case-insensitive**
+    (`{field}__iexact`). `email` reads the Google `email` claim; any other field name is
+    read from the corresponding `id_info` claim.
+
+    ```python
+    GOOGLE_USER_LOOKUP_FIELD = "email"
+    ```
+
+    **Type:** `str` · **Default:** `"email"`
+
+### `GOOGLE_USER_REQUIRE_VERIFIED_EMAIL`
+
+:   When `True`, sign-in is refused unless Google reports the email as verified
+    (`email_verified` claim). This is the primary guard against account hijacking via an
+    unverified address — keep it on unless you fully trust every issuer.
+
+    ```python
+    GOOGLE_USER_REQUIRE_VERIFIED_EMAIL = True
+    ```
+
+    **Type:** `bool` · **Default:** `True`
+
+### `GOOGLE_USER_MAPPER`
+
+:   Optional dotted path to a callable `(id_info, user, created) -> None` that runs on
+    every sign-in, letting you copy claims onto the `User` (roles, avatar, groups, …)
+    before it is saved. When unset, a built-in mapper fills `first_name` / `last_name`
+    from the `given_name` / `family_name` claims if they are empty.
+
+    ```python
+    GOOGLE_USER_MAPPER = "myapp.auth.map_google_user"
+    ```
+
+    ```python
+    # myapp/auth.py
+    def map_google_user(id_info, user, created):
+        user.is_staff = id_info.get("hd") == "mycompany.com"
+    ```
+
+    **Type:** `str | None` · **Default:** `None`
+
+---
+
 ## Environment Variable
 
 ### `OAUTHLIB_INSECURE_TRANSPORT`
@@ -300,6 +399,11 @@ All settings are defined in your Django project's `settings.py`.
 | `GOOGLE_SESSION_AUTO_REFRESH` | ❌ | `bool` | `True` |
 | `GOOGLE_SESSION_MAX_AGE` | ❌ | `int\|None` | `None` |
 | `GOOGLE_SESSION_IDLE_TIMEOUT` | ❌ | `int\|None` | `None` |
+| `GOOGLE_USER_INTEGRATION` | ❌ | `bool` | `False` |
+| `GOOGLE_USER_AUTO_CREATE` | ❌ | `bool` | `True` |
+| `GOOGLE_USER_LOOKUP_FIELD` | ❌ | `str` | `"email"` |
+| `GOOGLE_USER_REQUIRE_VERIFIED_EMAIL` | ❌ | `bool` | `True` |
+| `GOOGLE_USER_MAPPER` | ❌ | `str\|None` | `None` |
 | `DJANGO_GAUTH_UI_CONFIG` | ❌ | `dict` | Not set |
 
 ---
@@ -314,6 +418,9 @@ Django Gauth validates your settings when the server starts:
 | `django_gauth.E002` | Error | `SessionMiddleware` not in `MIDDLEWARE` |
 | `django_gauth.E003` | Error | `GOOGLE_CLIENT_ID` or `GOOGLE_CLIENT_SECRET` missing |
 | `django_gauth.E004` | Warning | `SCOPE` not defined |
+| `django_gauth.W001` | Warning | `GOOGLE_USER_INTEGRATION` on, but `django.contrib.auth` missing |
+| `django_gauth.W002` | Warning | `GOOGLE_USER_INTEGRATION` on, but `AuthenticationMiddleware` missing |
+| `django_gauth.W003` | Warning | `GOOGLE_USER_INTEGRATION` on, but `GoogleAuthBackend` missing |
 
 Run checks manually:
 
