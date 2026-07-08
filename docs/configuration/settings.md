@@ -224,6 +224,15 @@ All settings are defined in your Django project's `settings.py`.
         absolute re-authentication interval. This setting enforces exactly that,
         independent of whether Google would still honour the refresh token.
 
+    !!! warning "The cap is **not** lifted by `GOOGLE_SESSION_AUTO_REFRESH`"
+        This is a **hard ceiling**, measured from the original login and **never**
+        moved by a refresh. With `AUTO_REFRESH=True` *and* `MAX_AGE` set, hitting
+        `/gauth/session` after the cap elapses returns `authenticated: false` — it
+        does **not** refresh. That is intended: an ever-refreshable cap would never
+        fire. For "extend while active, up to a limit", pair it with
+        `GOOGLE_SESSION_IDLE_TIMEOUT`. See
+        [Session Lifecycle → Precedence](../concepts/session-lifecycle.md#precedence-why-refresh-never-beats-the-caps).
+
 ### `GOOGLE_SESSION_IDLE_TIMEOUT`
 
 :   **Idle timeout**, in seconds. When set, a session that has been inactive for
