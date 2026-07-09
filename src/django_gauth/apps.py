@@ -1,5 +1,5 @@
 import warnings
-from typing import Any
+from typing import Any, Dict
 from urllib.parse import urlparse
 
 from django.apps import AppConfig  # pylint: disable=E0401
@@ -67,7 +67,7 @@ def apply_setting_defaults() -> None:
     already defines is left untouched (and is still validated by
     :func:`set_defaults` when the check framework runs).
     """
-    setting_defaults = {
+    setting_defaults: Dict[str, Any] = {
         "SCOPE": [],
         "GOOGLE_AUTH_FINAL_REDIRECT_URL": defaults.GOOGLE_AUTH_FINAL_REDIRECT_URL,
         "CREDENTIALS_SESSION_KEY_NAME": defaults.CREDENTIALS_SESSION_KEY_NAME,
