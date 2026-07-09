@@ -46,6 +46,40 @@ class Tags(DjangoTags):
     django_gauth_compatibility = "django_gauth_compatibility"
 
 
+def apply_setting_defaults() -> None:
+    """Populate django-gauth's optional settings with their packaged defaults.
+
+    This runs from :meth:`DjangoGauthConfig.ready`, which Django executes during
+    ``django.setup()`` for **every** entrypoint — ``runserver``, ``gunicorn``,
+    ``uwsgi``, ASGI servers, and management commands alike. That is what makes
+    these defaults reliable in production.
+
+    Historically the defaults were applied inside :func:`set_defaults`, a
+    *system check*. But Django only runs system checks for a handful of
+    management commands (``check``, ``runserver``, ``migrate`` …) — **never**
+    when a WSGI/ASGI server merely imports the application object. Under
+    ``gunicorn``/``uwsgi`` the checks (and therefore the defaults) never ran, so
+    runtime code that reads e.g. ``settings.SCOPE`` or ``settings.STATE_KEY_NAME``
+    directly could raise ``AttributeError``. Applying them here fixes that for
+    every server.
+
+    Idempotent: only settings that are *absent* are filled; anything the project
+    already defines is left untouched (and is still validated by
+    :func:`set_defaults` when the check framework runs).
+    """
+    setting_defaults = {
+        "SCOPE": [],
+        "GOOGLE_AUTH_FINAL_REDIRECT_URL": defaults.GOOGLE_AUTH_FINAL_REDIRECT_URL,
+        "CREDENTIALS_SESSION_KEY_NAME": defaults.CREDENTIALS_SESSION_KEY_NAME,
+        "STATE_KEY_NAME": defaults.STATE_KEY_NAME,
+        "FINAL_REDIRECT_KEY_NAME": defaults.FINAL_REDIRECT_KEY_NAME,
+        "GOOGLE_LOGIN_PROMPT": defaults.GOOGLE_LOGIN_PROMPT,
+    }
+    for name, value in setting_defaults.items():
+        if not hasattr(settings, name):
+            setattr(settings, name, value)
+
+
 # pylint: disable=R0903
 class DjangoGauthConfig(AppConfig):
     """
@@ -56,6 +90,12 @@ class DjangoGauthConfig(AppConfig):
     name = "django_gauth"
 
     def ready(self) -> None:
+        # Apply setting defaults here — not only via the ``set_defaults`` system
+        # check — so they are present under EVERY server (gunicorn/uwsgi/asgi
+        # included). Django does not run system checks when a WSGI/ASGI server
+        # imports the application object, so relying on the check alone left the
+        # defaults unset in production (see apply_setting_defaults docstring).
+        apply_setting_defaults()
         register(Tags.compatibility)(check_project_middlewares)
         register(Tags.django_gauth_compatibility)(check_project_settings)
         register(Tags.django_gauth_compatibility)(check_user_integration_requirements)
