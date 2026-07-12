@@ -26,6 +26,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `apply_setting_defaults()`), which runs for **all** entrypoints. The `set_defaults`
   check is retained for `manage.py check` validation.
 
+### Documentation
+
+- **Documented that the view-protection helpers (`gauth_required`,
+  `GauthRequiredMixin`) support Django native views only, not Django REST Framework.**
+  DRF views use a different request/authentication/permission contract, so these helpers
+  may behave incorrectly on `APIView` / `ViewSet` / `@api_view` endpoints. The limitation
+  is now noted in the decorators API reference, the troubleshooting guide, and the module
+  docstring, with the DRF-native adapters called out as planned work.
+
 ## [0.3.0] - 2026-07-09
 
 ### Security

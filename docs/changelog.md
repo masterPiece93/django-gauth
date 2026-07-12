@@ -24,6 +24,14 @@ All notable changes to this project are documented here.
   Defaults are now applied from `AppConfig.ready()` (idempotent `apply_setting_defaults()`),
   which runs for every server; the check is kept for `manage.py check` validation.
 
+### Documentation
+
+- **Documented that `gauth_required` / `GauthRequiredMixin` support Django native views
+  only, not Django REST Framework.** DRF's request/authentication/permission contract
+  differs, so the helpers may behave incorrectly on `APIView` / `ViewSet` / `@api_view`
+  endpoints. Noted in the decorators API reference, the troubleshooting guide, and the
+  module docstring; DRF-native adapters are planned.
+
 ## 0.3.0
 
 :material-calendar: 2026-07-09

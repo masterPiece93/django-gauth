@@ -25,6 +25,22 @@ so they work with or without a `User` model.
 On failure they honour the same `response=` convention as `login()` / `logout()`:
 `redirect` (a `302` to the login endpoint, default) or `json` (a `401` body).
 
+!!! warning "Django REST Framework is not supported (yet)"
+    `gauth_required` and `GauthRequiredMixin` target **Django's native view contract**
+    (`django.http.HttpRequest`, `request.session`, `request.user` as populated by
+    `AuthenticationMiddleware`). They are **not** designed for
+    [Django REST Framework](https://www.django-rest-framework.org/) views.
+
+    On a DRF view, `request.user` is populated by DRF's own
+    `authentication_classes` (not Django's middleware), access control is expected to
+    flow through `permission_classes`, and failures should be raised as DRF exceptions
+    (rendered `401`/`403`) rather than returned as a `302` redirect. Using these helpers
+    on `APIView` / `ViewSet` / `@api_view` endpoints may therefore behave incorrectly.
+
+    DRF-native adapters (a `BaseAuthentication` + `BasePermission` pair) are
+    **planned** — track [this feature request](https://github.com/masterPiece93/django-gauth/issues).
+    Until then, protect DRF endpoints with DRF's own authentication/permission classes.
+
 ---
 
 ## `gauth_required`
