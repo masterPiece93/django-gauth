@@ -14,6 +14,16 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+### Fixed
+
+- **Setting defaults now apply under gunicorn/uWSGI/ASGI, not just `runserver`.** The
+  optional settings (`SCOPE`, `STATE_KEY_NAME`, `FINAL_REDIRECT_KEY_NAME`,
+  `GOOGLE_LOGIN_PROMPT`, `CREDENTIALS_SESSION_KEY_NAME`, `GOOGLE_AUTH_FINAL_REDIRECT_URL`)
+  were filled in by the `set_defaults` **system check** — which Django doesn't run when a
+  WSGI/ASGI server imports the app, so `gunicorn` deployments could hit `AttributeError`.
+  Defaults are now applied from `AppConfig.ready()` (idempotent `apply_setting_defaults()`),
+  which runs for every server; the check is kept for `manage.py check` validation.
+
 ## 0.3.0
 
 :material-calendar: 2026-07-09

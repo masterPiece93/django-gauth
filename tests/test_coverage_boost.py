@@ -340,6 +340,84 @@ class SetDefaultsTest(TestCase):
 
 
 # ============================================================
+# apps.py — apply_setting_defaults (runs from AppConfig.ready)
+# ============================================================
+class ApplySettingDefaultsTest(TestCase):
+    """Cover apps.apply_setting_defaults.
+
+    This is the gunicorn/uwsgi/asgi-safe path: unlike the ``set_defaults``
+    system check (which Django only runs for a few management commands), this
+    runs from ``AppConfig.ready()`` for every server, so the defaults are always
+    present at runtime.
+    """
+
+    def _apply(self):
+        from django_gauth.apps import apply_setting_defaults
+
+        return apply_setting_defaults()
+
+    @override_settings()
+    def test_fills_all_absent_settings(self):
+        """Every optional setting that is absent gets its packaged default."""
+        for name in (
+            "SCOPE",
+            "GOOGLE_AUTH_FINAL_REDIRECT_URL",
+            "CREDENTIALS_SESSION_KEY_NAME",
+            "STATE_KEY_NAME",
+            "FINAL_REDIRECT_KEY_NAME",
+            "GOOGLE_LOGIN_PROMPT",
+        ):
+            if hasattr(settings, name):
+                delattr(settings, name)
+
+        self._apply()
+
+        self.assertEqual(settings.SCOPE, [])
+        self.assertEqual(
+            settings.GOOGLE_AUTH_FINAL_REDIRECT_URL,
+            defaults.GOOGLE_AUTH_FINAL_REDIRECT_URL,
+        )
+        self.assertEqual(
+            settings.CREDENTIALS_SESSION_KEY_NAME,
+            defaults.CREDENTIALS_SESSION_KEY_NAME,
+        )
+        self.assertEqual(settings.STATE_KEY_NAME, defaults.STATE_KEY_NAME)
+        self.assertEqual(
+            settings.FINAL_REDIRECT_KEY_NAME, defaults.FINAL_REDIRECT_KEY_NAME
+        )
+        self.assertEqual(settings.GOOGLE_LOGIN_PROMPT, defaults.GOOGLE_LOGIN_PROMPT)
+
+    @override_settings(
+        SCOPE=["openid"],
+        STATE_KEY_NAME="custom_state",
+        GOOGLE_LOGIN_PROMPT="consent",
+    )
+    def test_is_idempotent_and_preserves_user_values(self):
+        """User-defined settings are never overwritten (idempotent fill)."""
+        self._apply()
+        self.assertEqual(settings.SCOPE, ["openid"])
+        self.assertEqual(settings.STATE_KEY_NAME, "custom_state")
+        self.assertEqual(settings.GOOGLE_LOGIN_PROMPT, "consent")
+
+    def test_ready_applies_defaults_for_wsgi_servers(self):
+        """Regression: AppConfig.ready() must apply defaults, since gunicorn/
+        uwsgi/asgi never trigger the system-check framework."""
+        from django.apps import apps as django_apps
+
+        app_config = django_apps.get_app_config("django_gauth")
+        # Remove a couple of settings a WSGI import would rely on...
+        for name in ("STATE_KEY_NAME", "GOOGLE_LOGIN_PROMPT"):
+            if hasattr(settings, name):
+                delattr(settings, name)
+
+        # ...then re-run ready() (what django.setup() does under gunicorn).
+        app_config.ready()
+
+        self.assertEqual(settings.STATE_KEY_NAME, defaults.STATE_KEY_NAME)
+        self.assertEqual(settings.GOOGLE_LOGIN_PROMPT, defaults.GOOGLE_LOGIN_PROMPT)
+
+
+# ============================================================
 # apps.py — is_url helper
 # ============================================================
 class IsUrlTest(TestCase):
