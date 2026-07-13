@@ -12,6 +12,7 @@
 [![Pylint](https://github.com/masterPiece93/django-gauth/actions/workflows/pylint.yml/badge.svg)](https://github.com/masterPiece93/django-gauth/actions/workflows/pylint.yml)
 
 > [Official Documentation](https://masterpiece93.github.io/django-gauth/)
+> [Demo Integration / Samples](https://github.com/masterPiece93/django_gauth_samples)
 
 ## Why django-gauth?
 

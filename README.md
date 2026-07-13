@@ -7,6 +7,7 @@
 
 
 * [Official Documentation](https://masterpiece93.github.io/django-gauth/)
+* [Demo Integration / Samples](https://github.com/masterPiece93/django_gauth_samples)
 
 ## ✨ Feature Spotlight — Nested & Dynamic Auth
 
