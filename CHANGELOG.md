@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-14
+
 ### Fixed
 
 - **Setting defaults are now applied under every server (gunicorn/uWSGI/ASGI), not just
@@ -34,6 +36,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   may behave incorrectly on `APIView` / `ViewSet` / `@api_view` endpoints. The limitation
   is now noted in the decorators API reference, the troubleshooting guide, and the module
   docstring, with the DRF-native adapters called out as planned work.
+
+- **added the link to django-gauth-samples** for better user understanding on the package .
+
+### Added
+
+- added `AGENTS.md` file 
 
 ## [0.3.0] - 2026-07-09
 
