@@ -13,6 +13,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-14
+
+### Fixed
+
+- **Setting defaults are now applied under every server (gunicorn/uWSGI/ASGI), not just
+  `runserver`.** django-gauth's optional settings (`SCOPE`, `STATE_KEY_NAME`,
+  `FINAL_REDIRECT_KEY_NAME`, `GOOGLE_LOGIN_PROMPT`, `CREDENTIALS_SESSION_KEY_NAME`,
+  `GOOGLE_AUTH_FINAL_REDIRECT_URL`) were previously filled in inside the `set_defaults`
+  **system check**, which Django only runs for a few management commands — never when a
+  WSGI/ASGI server imports the application object. Under `gunicorn` the defaults never
+  applied, so runtime code reading e.g. `settings.SCOPE` could raise `AttributeError`.
+  The defaults are now applied from `AppConfig.ready()` (via a new idempotent
+  `apply_setting_defaults()`), which runs for **all** entrypoints. The `set_defaults`
+  check is retained for `manage.py check` validation.
+
+### Documentation
+
+- **Documented that the view-protection helpers (`gauth_required`,
+  `GauthRequiredMixin`) support Django native views only, not Django REST Framework.**
+  DRF views use a different request/authentication/permission contract, so these helpers
+  may behave incorrectly on `APIView` / `ViewSet` / `@api_view` endpoints. The limitation
+  is now noted in the decorators API reference, the troubleshooting guide, and the module
+  docstring, with the DRF-native adapters called out as planned work.
+
+- **added the link to django-gauth-samples** for better user understanding on the package .
+
+### Added
+
+- added `AGENTS.md` file 
+
 ## [0.3.0] - 2026-07-09
 
 ### Security

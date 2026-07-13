@@ -200,6 +200,33 @@ flowchart TD
 
 ---
 
+## Known Limitations
+
+### `gauth_required` / `GauthRequiredMixin` do not support Django REST Framework
+
+!!! warning "Django native views only"
+    **Cause:** The view-protection helpers
+    ([`gauth_required` and `GauthRequiredMixin`](../api/decorators.md)) are built
+    against Django's native view contract — `django.http.HttpRequest`,
+    `request.session`, and `request.user` as populated by `AuthenticationMiddleware`.
+
+    [Django REST Framework](https://www.django-rest-framework.org/) views
+    (`APIView`, `ViewSet`, `@api_view`) use a different contract: `request.user` is
+    populated by DRF's `authentication_classes` (not Django's middleware), access
+    control is expected to run through `permission_classes`, and unauthorized
+    responses are raised as DRF exceptions (rendered `401`/`403`) rather than returned
+    as a `302` redirect. Applying these helpers to DRF endpoints may therefore behave
+    incorrectly.
+
+    **Workaround:** Protect DRF endpoints with DRF's own authentication and permission
+    classes for now.
+
+    **Status:** DRF-native adapters (a `BaseAuthentication` + `BasePermission` pair
+    reusing django-gauth's session-lifecycle core) are **planned**. Track or upvote the
+    [feature request on GitHub](https://github.com/masterPiece93/django-gauth/issues).
+
+---
+
 ## Still Stuck?
 
 1. Check the [GitHub Issues](https://github.com/masterPiece93/django-gauth/issues)

@@ -7,6 +7,7 @@
 
 
 * [Official Documentation](https://masterpiece93.github.io/django-gauth/)
+* [Demo Integration / Samples](https://github.com/masterPiece93/django_gauth_samples)
 
 ## ✨ Feature Spotlight — Nested & Dynamic Auth
 
@@ -67,6 +68,13 @@ Google identities onto your project's **existing** `AUTH_USER_MODEL`:
 - 🔌 **Dual-mode guards** — `gauth_required` / `GauthRequiredMixin` work with *or* without integration.
 
 > 👉 **Availability:** `django-gauth >= 0.3.0`.
+
+> ⚠️ **Limitation:** The view-protection guards (`gauth_required` / `GauthRequiredMixin`)
+> support **Django native views only** — they are **not** compatible with
+> [Django REST Framework](https://www.django-rest-framework.org/) views (`APIView`,
+> `ViewSet`, `@api_view`). DRF-native adapters are planned; until then, protect DRF
+> endpoints with DRF's own authentication/permission classes. See the
+> [troubleshooting notes](https://masterpiece93.github.io/django-gauth/guides/troubleshooting/#known-limitations).
 
 > 👉 **Learn more:** [Django User Integration](https://masterpiece93.github.io/django-gauth/concepts/django-user-integration/)
 

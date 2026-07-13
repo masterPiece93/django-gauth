@@ -20,6 +20,17 @@ rejected even when Django's auth middleware still considers the user valid.
 On failure the guard either issues a ``302`` redirect to the login endpoint
 (``response="redirect"``, the default) or returns a ``401`` JSON body
 (``response="json"``) suited to SPA/XHR callers.
+
+.. note::
+   **Scope: Django native views only.** These helpers target Django's native
+   view contract (``django.http.HttpRequest``, ``request.session``, and
+   ``request.user`` as populated by ``AuthenticationMiddleware``). They are
+   **not** compatible with `Django REST Framework
+   <https://www.django-rest-framework.org/>`_ views (``APIView``, ``ViewSet``,
+   ``@api_view``), where authentication flows through DRF ``authentication_classes``
+   / ``permission_classes`` and failures are raised as DRF exceptions rather than
+   returned as redirects. DRF-native adapters are planned; until then, guard DRF
+   endpoints with DRF's own authentication and permission classes.
 """
 
 import functools
